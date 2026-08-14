@@ -1,0 +1,7 @@
+blank_issues_enabled: false
+contact_links:
+  - name: "Telegram - вопросы, не баг / questions, not a bug"
+    url: https://t.me/bridgeboxofficial
+    about: >
+      Если это не баг и не идея для фичи, а просто вопрос - сюда, ответ быстрее.
+      Not a bug or a feature idea, just a question? Ask here instead, it's faster.

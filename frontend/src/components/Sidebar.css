@@ -1,0 +1,203 @@
+.bb-sidebar {
+  width: var(--sidebar-width);
+  flex-shrink: 0;
+  background: var(--color-surface);
+  border-right: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-5) var(--space-3);
+  /* ponytail: animates width, which is a layout property - the content area
+     has to actually reclaim the space, so transform would slide the rail over
+     the content instead of resizing it. One 320ms reflow of a three-item rail
+     in a fixed desktop window. Revisit only if it visibly janks. */
+  transition: width var(--dur-slow) var(--ease-out);
+  overflow: hidden;
+}
+
+.bb-sidebar[data-collapsed='true'] {
+  width: var(--sidebar-width-collapsed);
+}
+
+/* Settings' "Анимации интерфейса", mirrored onto the root by
+   MotionPrefsContext - the JS gate only reaches framer-motion. */
+:root[data-animations='off'] .bb-sidebar {
+  transition: none;
+}
+
+.bb-sidebar__brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-2);
+  margin-bottom: var(--space-6);
+}
+
+.bb-sidebar__nav {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.bb-sidebar__item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: 9px var(--space-3);
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+}
+
+.bb-sidebar__item:hover {
+  color: var(--color-text-primary);
+}
+
+.bb-sidebar__item--active {
+  color: var(--color-accent);
+}
+
+.bb-sidebar__active-pill {
+  position: absolute;
+  inset: 0;
+  background: var(--color-accent-soft);
+  border-radius: var(--radius-sm);
+  z-index: 0;
+}
+
+.bb-sidebar__item-icon,
+.bb-sidebar__item-label {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+}
+
+.bb-sidebar__item-icon {
+  flex-shrink: 0;
+  /* Same curve and duration as the rail's width - see the block below. */
+  transition: transform var(--dur-slow) var(--ease-out);
+}
+
+/* Collapsing used to flip display, padding and justify-content all at once.
+   None of those interpolate, so on frame one - with the rail still its full
+   232px - the labels vanished and every icon jumped to the centre of a rail
+   that had not moved yet (measured: icon x 24 -> 105.5 in one frame), then
+   slid back left as the width finally eased. That yank was the jank, and it
+   was much bigger than the width animation it interrupted.
+   Nothing here switches state any more. The rail's content stays laid out
+   exactly as it is and only ever moves by transform, on the rail's own
+   320ms/--ease-out curve, so the whole panel is one motion.
+
+   The offsets are what it takes to centre each element in the collapsed
+   content box, derived rather than typed so they follow the tokens:
+     content box = --sidebar-width-collapsed - 2 * --space-3  (= 40px) */
+.bb-sidebar {
+  --bb-content-collapsed: calc(var(--sidebar-width-collapsed) - 2 * var(--space-3));
+  --bb-nav-icon: 20px;
+  --bb-collapse-btn: 32px;
+}
+
+/* Labels fade instead of being dropped; the rail's overflow:hidden takes care
+   of the text as the width closes over it. */
+.bb-sidebar__item-label {
+  white-space: nowrap;
+  transition: opacity var(--dur-base) var(--ease-standard);
+  /* Expanding: hold until the rail is wide enough that the label is not
+     revealed mid-word. Collapsing overrides this to leave immediately. */
+  transition-delay: 120ms;
+}
+
+.bb-sidebar[data-collapsed='true'] .bb-sidebar__item-label {
+  opacity: 0;
+  transition-duration: var(--dur-fast);
+  transition-delay: 0ms;
+}
+
+/* 20px icon centred in the 40px content box wants a 10px inset; the item's
+   own padding already supplies 12px, so it only has to give back 2px. */
+.bb-sidebar[data-collapsed='true'] .bb-sidebar__item-icon {
+  transform: translateX(
+    calc((var(--bb-content-collapsed) - var(--bb-nav-icon)) / 2 - var(--space-3))
+  );
+}
+
+.bb-sidebar[data-collapsed='true'] .bb-logo-slot {
+  transform: translateX(
+    calc((var(--bb-content-collapsed) - var(--bb-logo-monogram)) / 2 - var(--space-2))
+  );
+}
+
+/* Pinned to the bottom as one unit - the bug-report button sits directly
+   above the collapse button. */
+.bb-sidebar__footer {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* Same row as the nav items above (.bb-sidebar__item: width 100%, icon +
+   label, the same collapse-time icon/label transforms already scoped to
+   those classes generically) - so it gets a visible label when expanded and
+   collapses to an icon-only, tooltipped square exactly like "Настройки" or
+   "Логи" do, instead of living as a one-off fixed-size button. */
+.bb-sidebar__bugreport {
+  color: var(--color-danger);
+}
+
+/* Red always, not just on hover: this is the one action in the rail that
+   isn't neutral chrome, and burying that under a hover-only accent would
+   make it look like any other item until the pointer happens to land on it. */
+.bb-sidebar__bugreport:hover {
+  color: var(--color-danger);
+  background: var(--color-danger-soft);
+}
+
+.bb-sidebar__collapse {
+  align-self: flex-start;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--bb-collapse-btn);
+  height: var(--bb-collapse-btn);
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-standard),
+    background var(--dur-fast) var(--ease-standard),
+    transform var(--dur-slow) var(--ease-out);
+}
+
+.bb-sidebar__collapse:hover {
+  color: var(--color-text-primary);
+  background: var(--color-surface-sunken);
+}
+
+/* The chevron points the way the rail will move, so it flips when collapsed -
+   and slides to the centre of the collapsed box in the same transform, since
+   it used to get there by an align-self flip that landed on frame one. */
+.bb-sidebar[data-collapsed='true'] .bb-sidebar__collapse {
+  transform: translateX(calc((var(--bb-content-collapsed) - var(--bb-collapse-btn)) / 2))
+    rotate(180deg);
+}
+
+/* Settings' "Анимации интерфейса". Everything that moves during a collapse is
+   listed, so turning it off swaps the two states instead of leaving some parts
+   animating and others not. */
+:root[data-animations='off'] .bb-sidebar__collapse,
+:root[data-animations='off'] .bb-sidebar__item-icon,
+:root[data-animations='off'] .bb-sidebar__item-label {
+  transition: none;
+}

@@ -1,0 +1,114 @@
+[
+  {
+    "name": "zapret-discord-youtube",
+    "author": "Flowseal",
+    "author_url": "https://github.com/Flowseal",
+    "project_url": "https://github.com/Flowseal/zapret-discord-youtube",
+    "license": "MIT",
+    "purpose": "Windows packaging, DPI-desync strategy .bat files and general.bat baseline adapted in zapret/ for routing Jackbox traffic around DPI"
+  },
+  {
+    "name": "zapret",
+    "author": "bol-van",
+    "author_url": "https://github.com/bol-van",
+    "project_url": "https://github.com/bol-van/zapret",
+    "license": "MIT",
+    "purpose": "Original DPI-desync engine (winws.exe core) that Flowseal's Windows distribution bundles"
+  },
+  {
+    "name": "WinDivert",
+    "author": "basil (basil00)",
+    "author_url": "https://github.com/basil00",
+    "project_url": "https://github.com/basil00/Divert",
+    "license": "LGPL-3.0 OR GPL-2.0",
+    "purpose": "Kernel-level packet interception/injection (WinDivert.dll, WinDivert64.sys) that winws.exe uses to apply DPI-desync"
+  },
+  {
+    "name": "aiohttp",
+    "author": "aio-libs contributors",
+    "author_url": "https://github.com/aio-libs",
+    "project_url": "https://github.com/aio-libs/aiohttp",
+    "license": "Apache-2.0",
+    "purpose": "Async HTTPS + WebSocket server and client used by the BridgeBox Ecast bridge"
+  },
+  {
+    "name": "cryptography",
+    "author": "Python Cryptographic Authority",
+    "author_url": "https://github.com/pyca",
+    "project_url": "https://github.com/pyca/cryptography",
+    "license": "Apache-2.0 OR BSD-3-Clause",
+    "purpose": "Local CA and localhost TLS certificate generation for the bridge's HTTPS/WSS endpoint"
+  },
+  {
+    "name": "pydantic",
+    "author": "Samuel Colvin and contributors",
+    "author_url": "https://github.com/pydantic",
+    "project_url": "https://github.com/pydantic/pydantic",
+    "license": "MIT",
+    "purpose": "Config schema validation (config.yaml)"
+  },
+  {
+    "name": "PyYAML",
+    "author": "Kirill Simonov and contributors",
+    "author_url": "https://github.com/yaml",
+    "project_url": "https://github.com/yaml/pyyaml",
+    "license": "MIT",
+    "purpose": "YAML parsing for config.yaml"
+  },
+  {
+    "name": "React",
+    "author": "Meta and contributors",
+    "author_url": "https://github.com/facebook",
+    "project_url": "https://github.com/facebook/react",
+    "license": "MIT",
+    "purpose": "UI library powering the BridgeBox interface"
+  },
+  {
+    "name": "Framer Motion",
+    "author": "Framer",
+    "author_url": "https://github.com/framer",
+    "project_url": "https://github.com/framer/motion",
+    "license": "MIT",
+    "purpose": "Spring physics and transitions across the UI"
+  },
+  {
+    "name": "pywebview",
+    "author": "Roman Sirokov and contributors",
+    "author_url": "https://github.com/r0x0r",
+    "project_url": "https://github.com/r0x0r/pywebview",
+    "license": "BSD-3-Clause",
+    "purpose": "Native desktop window hosting the web-based UI"
+  },
+  {
+    "name": "Inter",
+    "author": "Rasmus Andersson (rsms)",
+    "author_url": "https://github.com/rsms",
+    "project_url": "https://github.com/rsms/inter",
+    "license": "OFL-1.1",
+    "purpose": "Body and UI typeface, vendored as a Latin+Cyrillic subset in frontend/src/assets/fonts/"
+  },
+  {
+    "name": "Manrope",
+    "author": "Mikhail Sharanda",
+    "author_url": "https://github.com/sharanda",
+    "project_url": "https://github.com/sharanda/manrope",
+    "license": "OFL-1.1",
+    "purpose": "Display typeface (headings, wordmark), vendored as a Latin+Cyrillic subset in frontend/src/assets/fonts/"
+  },
+  {
+    "name": "JetBrains Mono",
+    "author": "JetBrains",
+    "author_url": "https://github.com/JetBrains",
+    "project_url": "https://github.com/JetBrains/JetBrainsMono",
+    "license": "OFL-1.1",
+    "purpose": "Monospace typeface (addresses, ports, log lines, timings), vendored as a Latin+Cyrillic subset in frontend/src/assets/fonts/"
+  },
+  {
+    "name": "johnbox",
+    "author": "InvoxiPlayGames",
+    "author_url": "https://github.com/InvoxiPlayGames",
+    "project_url": "https://github.com/InvoxiPlayGames/johnbox",
+    "license": "AGPL-3.0",
+    "purpose": "Reference only, no code bundled or derived - a community Ecast API v2 server whose room-creation response independently confirmed the real host/code/token shape (vs. the project's own unverified research docs) and that the game's WebSocket handshake isn't tied to a fixed path"
+  }
+]

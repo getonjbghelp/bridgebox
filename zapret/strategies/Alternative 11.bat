@@ -1,0 +1,46 @@
+@echo off
+chcp 65001 >nul
+:: BridgeBox-adapted Flowseal "general (ALT11)".
+:: Layout: winws.exe + WinDivert + *.bin live in vendor/zapret/ (parent of this file).
+:: Runs winws in the foreground (no "start") so BridgeBox can track the process.
+:: Domains come only from lists\list-jackbox.txt (--hostlist).
+
+setlocal
+cd /d "%~dp0.."
+set "BIN=%cd%\"
+set "LISTS=%cd%\lists\"
+set "HOSTLIST=%LISTS%list-jackbox.txt"
+
+if exist "%BIN%winws.exe" goto :bb_check_hostlist
+echo [BridgeBox] winws.exe not found in "%BIN%"
+exit /b 1
+
+:bb_check_hostlist
+if exist "%HOSTLIST%" goto :bb_run
+echo [BridgeBox] hostlist not found: "%HOSTLIST%"
+exit /b 1
+
+:bb_run
+
+"%BIN%winws.exe" ^
+  --wf-tcp=80,443,38203 ^
+  --wf-udp=443 ^
+  --filter-tcp=80,443,38203 ^
+  --hostlist="%HOSTLIST%" ^
+  --dpi-desync=fake,multisplit ^
+  --dpi-desync-split-seqovl=664 ^
+  --dpi-desync-split-pos=1 ^
+  --dpi-desync-fooling=ts ^
+  --dpi-desync-repeats=8 ^
+  --dpi-desync-split-seqovl-pattern="%BIN%tls_clienthello_max_ru.bin" ^
+  --dpi-desync-fake-tls="%BIN%stun.bin" ^
+  --dpi-desync-fake-tls="%BIN%tls_clienthello_max_ru.bin" ^
+  --dpi-desync-fake-http="%BIN%tls_clienthello_max_ru.bin" ^
+  --new ^
+  --filter-udp=443 ^
+  --hostlist="%HOSTLIST%" ^
+  --dpi-desync=fake ^
+  --dpi-desync-repeats=11 ^
+  --dpi-desync-fake-quic="%BIN%quic_initial_www_google_com.bin"
+
+endlocal

@@ -1,0 +1,18 @@
+.bb-confirm__skip {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+
+.bb-confirm__skip span {
+  cursor: pointer;
+  color: var(--color-text-secondary);
+}
+
+.bb-confirm__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  margin-top: var(--space-5);
+}

@@ -1,0 +1,160 @@
+/* The modal is a DOM descendant of .bb-home, which centres everything - fine
+   for prose, wrong for numbered steps, where centred wrapped lines each start
+   at a different x and the "1."/"2." markers stop lining up. Stated once here
+   rather than per element. */
+.bb-guide {
+  text-align: left;
+}
+
+/* Centred over the two tiles it introduces - it is a heading for the choice,
+   not the start of the prose that follows once a choice is made. */
+.bb-guide__prompt {
+  margin: 0 0 var(--space-4);
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+  text-align: center;
+}
+
+/* Two equal choices, so two equal columns. The modal body is already a
+   surface, so the tiles are the only nesting level here - no card inside a
+   card. */
+.bb-guide__tiles {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+}
+
+.bb-guide__tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-5) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-sunken);
+  color: var(--color-text-primary);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-standard),
+    color var(--dur-fast) var(--ease-standard);
+}
+
+.bb-guide__tile:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.bb-guide__back {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-bottom: var(--space-4);
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.bb-guide__back:hover {
+  color: var(--color-text-primary);
+}
+
+/* The shared chevron points right; this one is a "back", so it turns. */
+.bb-guide__back-arrow {
+  display: flex;
+  transform: rotate(180deg);
+}
+
+.bb-guide__intro {
+  margin: 0 0 var(--space-4);
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+.bb-guide__way {
+  margin: var(--space-6) 0 var(--space-3);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+}
+
+.bb-guide__steps {
+  margin: 0 0 var(--space-4);
+  padding-left: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  font-size: var(--text-sm);
+  line-height: 1.55;
+}
+
+.bb-guide__code-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.bb-guide__code {
+  flex: 1;
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-surface-sunken);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  /* The launch option is one long token; let it wrap rather than force the
+     modal wider than the window. */
+  overflow-wrap: anywhere;
+}
+
+.bb-guide__copied {
+  width: 12px;
+  color: var(--color-success);
+  font-size: var(--text-sm);
+}
+
+.bb-guide__gif {
+  margin-top: var(--space-2);
+}
+
+.bb-guide__gif-button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--color-accent);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.bb-guide__gif-icon {
+  display: flex;
+  transition: transform var(--dur-fast) var(--ease-standard);
+}
+
+.bb-guide__gif-icon--open {
+  transform: rotate(90deg);
+}
+
+.bb-guide__gif-frame {
+  overflow: hidden;
+}
+
+.bb-guide__gif-frame img {
+  display: block;
+  width: 100%;
+  margin-top: var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+:root[data-animations='off'] .bb-guide__gif-icon {
+  transition: none;
+}

@@ -1,0 +1,39 @@
+.bb-segmented {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-sunken);
+}
+
+.bb-segmented__item {
+  padding: 6px 14px;
+  border: 0;
+  border-radius: calc(var(--radius-sm) - 2px);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-standard),
+    color var(--dur-fast) var(--ease-standard);
+}
+
+.bb-segmented__item:not(:disabled):hover {
+  color: var(--color-text-primary);
+}
+
+/* Same meaning as Toggle's "on" state - solid accent fill - so the two
+   controls read as one language rather than two different ideas of
+   "selected" sitting next to each other in the same panel. */
+.bb-segmented__item[aria-pressed='true'] {
+  background: var(--color-accent);
+  color: var(--color-text-on-accent);
+  font-weight: var(--weight-medium);
+}
+
+.bb-segmented__item:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}

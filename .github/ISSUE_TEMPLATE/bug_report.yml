@@ -1,0 +1,102 @@
+name: "Баг-репорт / Bug report"
+description: "Сообщить о проблеме c BridgeBox / Report a problem with BridgeBox"
+title: "[Bug]: "
+labels: ["bug", "needs triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Спасибо, что нашли время сообщить о проблеме. Сначала отметьте пункты ниже — это
+        экономит время всем: половина issue закрывается уже на этом шаге.
+
+        Thanks for taking the time to report this. Please confirm the checklist below
+        first — it saves everyone's time, and often answers the issue on its own.
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: "Перед отправкой / Before submitting"
+      options:
+        - label: >
+            Я прочитал(а) раздел «Если не работает» в README, и это не помогло /
+            I've read the Troubleshooting section in the README and it didn't help
+          required: true
+        - label: >
+            Я использую последнюю версию из вкладки Releases (не старую скачанную
+            раньше) / I'm using the latest version from the Releases tab, not an
+            older one
+          required: true
+        - label: >
+            Я поискал(а) среди уже открытых и закрытых issues — похожей проблемы
+            нет / I've searched existing issues, open and closed, for a duplicate
+          required: true
+        - label: >
+            Если проблема похожа на срабатывание антивируса на WinDivert — я
+            проверил(а) исключения (см. предупреждение в README) / If this looks
+            like an antivirus false positive on WinDivert, I've checked my
+            exclusions (see the warning in the README)
+          required: false
+
+  - type: textarea
+    id: description
+    attributes:
+      label: "Описание проблемы / Problem description"
+      description: "Что произошло? / What happened?"
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: "Шаги для воспроизведения / Steps to reproduce"
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: "Ожидалось / получилось / Expected vs. actual behaviour"
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: "Версия BridgeBox / BridgeBox version"
+      description: "Экран «Инфо» → Версия / the Info screen → Version"
+      placeholder: "b1"
+    validations:
+      required: true
+
+  - type: input
+    id: windows
+    attributes:
+      label: "Версия Windows / Windows version"
+      placeholder: "Windows 11 23H2"
+    validations:
+      required: true
+
+  - type: input
+    id: strategy
+    attributes:
+      label: "Стратегия обхода, если применимо / Bypass strategy, if relevant"
+      placeholder: "General, Alternative 3, ..."
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: "Логи / Logs"
+      description: >
+        Экран «Логи» → включите все уровни → «Копировать» и вставьте сюда.
+        Токены и пароли замазываются автоматически, можно спокойно прикладывать. /
+        Logs screen → enable every level → Copy, then paste here. Tokens and
+        passwords are redacted automatically, safe to attach as-is.
+      render: shell
+    validations:
+      required: false

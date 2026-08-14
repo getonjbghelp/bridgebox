@@ -1,0 +1,49 @@
+/* Sits above the whole app, at the top rather than the bottom: this is a
+   statement about the program you are looking at, not about something you just
+   did. The settings "restart needed" banner is the bottom one, and keeping the
+   two apart is what stops either from being read as the other. */
+.bb-integrity {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-danger);
+  background: var(--color-danger-soft);
+  color: var(--color-text-primary);
+}
+
+.bb-integrity__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 260px;
+}
+
+.bb-integrity__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-danger);
+}
+
+.bb-integrity__body {
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+/* The file list is evidence, not the message - it must never push the actions
+   off the row or turn the banner into a wall. */
+.bb-integrity__files {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.bb-integrity__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
+}

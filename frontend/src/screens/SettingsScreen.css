@@ -1,0 +1,260 @@
+.bb-select,
+.bb-input,
+.bb-textarea {
+  font-family: inherit;
+  font-size: var(--text-base);
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  transition: border-color var(--dur-fast) var(--ease-standard);
+}
+
+.bb-select:hover,
+.bb-input:hover,
+.bb-textarea:hover {
+  border-color: var(--color-accent);
+}
+
+/* The hostlist is a text file, so a plain textarea is the editor. Tall enough
+   to show the shipped list's sections without scrolling past them. */
+.bb-textarea {
+  display: block;
+  width: 100%;
+  height: 320px;
+  margin: var(--space-4) 0;
+  resize: vertical;
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  white-space: pre;
+  overflow-wrap: normal;
+  overflow-x: auto;
+}
+
+.bb-hostlist__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.bb-input:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  background: var(--color-surface-sunken);
+}
+.bb-input:disabled:hover {
+  border-color: var(--color-border-strong);
+}
+
+/* WebView2's native dropdown popup (the <option> list, not the closed box)
+   renders with OS colours unless color/background are set directly on
+   <option> - inheriting from <select> is not enough and was leaving every
+   dropdown showing black-on-white text in dark theme. */
+.bb-select option,
+.bb-select optgroup {
+  color: var(--color-text-primary);
+  background: var(--color-surface);
+}
+
+.bb-input--narrow {
+  width: 90px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The rewrite fields hold JSON key lists, URLs and a full User-Agent - they
+   need real room, and they're the widest thing on the screen. */
+.bb-input--wide {
+  width: min(340px, 46vw);
+  font-size: var(--text-sm);
+}
+
+.bb-field-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.bb-diag {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.bb-diag__error {
+  color: var(--color-danger);
+  margin-top: var(--space-2);
+}
+
+.bb-diag__steps {
+  margin: 0 0 var(--space-4);
+  padding-left: var(--space-5);
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Each row used to be its own independent grid, so its 1fr tracks were sized
+   against only *that* row's content - the header row (long domain names)
+   and the data rows (short "мс" values) ended up with different column
+   widths, and nothing lined up. One grid shared by every cell fixes it:
+   the row divs go display:contents so their children become direct grid
+   items and every "row" resolves against the same tracks. */
+.bb-strategy-table {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  font-size: 13px;
+}
+
+.bb-strategy-table__row {
+  display: contents;
+}
+
+.bb-strategy-table__row > * {
+  display: flex;
+  align-items: center;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+  /* Grid items default to min-width:auto, which floors a track at its
+     content's min-content size - an unbroken run in the domain headers was
+     pushing the total past the modal and clipping "Применить" in the last
+     column. min-width:0 plus overflow-wrap lets the 1fr tracks actually
+     shrink instead of forcing the row wider than its container. */
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.bb-strategy-table__row > *:last-child {
+  /* The one column that must not wrap - a button breaking onto two lines
+     reads as broken, not compact. */
+  overflow-wrap: normal;
+  flex-shrink: 0;
+}
+.bb-strategy-table__row:last-child > * {
+  border-bottom: none;
+}
+.bb-strategy-table__row--head > * {
+  background: var(--color-surface-sunken);
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.bb-strategy-table__ok {
+  color: var(--color-success);
+  font-variant-numeric: tabular-nums;
+}
+.bb-strategy-table__fail {
+  color: var(--color-danger);
+  display: inline-flex;
+  align-items: center;
+}
+.bb-strategy-table__badge {
+  margin-left: var(--space-2);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--color-accent);
+  background: var(--color-accent-soft);
+  padding: 2px 6px;
+  border-radius: 999px;
+  text-transform: uppercase;
+}
+
+/* One block per target-set table in a "both" run. The heading above each
+   table (rendered only when more than one table is on screen - see
+   SettingsScreen.tsx) needs room above it to read as its own section rather
+   than a continuation of the previous table. */
+.bb-strategy-stage + .bb-strategy-stage {
+  margin-top: var(--space-5);
+}
+.bb-strategy-stage .text-subtitle {
+  display: block;
+  margin-bottom: var(--space-2);
+}
+
+/* Apply-fastest and the two export buttons share one row - they used to be
+   stacked (apply above, export below), which read as export belonging to a
+   different step instead of the same "you're done, now what" moment. */
+.bb-strategy-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+
+
+/* Connection profiles. Deliberately plain rows rather than cards: the
+   surrounding Section is already the visual grouping, and a card inside a
+   section would be a box inside a box.
+
+   The per-protocol settings block (Ecast rewriting / Blobcast options)
+   within the editing panel gets its own divider and heading, one level
+   below the Section's own - the same border-and-space technique Section.css
+   uses between whole sections, just smaller. Not an eyebrow: the label is
+   the system's own .text-subtitle step, not a caps-tracked kicker. */
+.bb-subheading {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: var(--space-2);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border);
+}
+
+/* What an update did to zapret/strategies/. Sits under the replaced-file list
+   in the "done" modal, separated by a rule rather than a card - it is a
+   continuation of that list, not a second thing. */
+.bb-strategy-changes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border);
+}
+
+/* The one outcome that is a decision rather than a fact: the user's own file
+   was kept and the new adaptation went beside it. */
+.bb-strategy-changes__forked {
+  color: var(--color-warning);
+}
+
+/* "Настройки изменены" — the bottom banner.
+
+   Sticky, not fixed: this screen IS the scroll container's content, so
+   sticking to the bottom needs no knowledge of the sidebar's width, and the
+   banner cannot float over the other two screens (which stay mounted, just
+   display:none). */
+.bb-settings__dirty {
+  position: sticky;
+  bottom: 0;
+  z-index: var(--z-sticky);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-top: var(--space-5);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-warning);
+  border-radius: var(--radius-md);
+  background: var(--color-warning-soft);
+  box-shadow: var(--shadow-md);
+}
+
+.bb-settings__dirty-text {
+  flex: 1;
+  min-width: 200px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--color-text-primary);
+}

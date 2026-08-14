@@ -1,0 +1,31 @@
+/* Self-hosted, subset to Latin + Cyrillic. See assets/fonts/README.md for why
+   these are not loaded from Google Fonts and why they live under src/assets/.
+
+   All three are variable fonts with a single weight axis, declared as a range
+   so any weight in it renders from one file - no separate 400/500/600/700
+   downloads. Every family token in tokens.css keeps a system fallback, so a
+   missing or corrupt .woff2 degrades to Segoe UI rather than to Times. */
+
+@font-face {
+  font-family: 'Manrope';
+  src: url('../assets/fonts/Manrope-subset.woff2') format('woff2');
+  font-weight: 200 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Inter';
+  src: url('../assets/fonts/Inter-subset.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('../assets/fonts/JetBrainsMono-subset.woff2') format('woff2');
+  font-weight: 100 800;
+  font-style: normal;
+  font-display: swap;
+}

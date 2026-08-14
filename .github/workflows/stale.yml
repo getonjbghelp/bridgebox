@@ -1,0 +1,44 @@
+name: Закрытие неактивных issues / Close stale issues
+
+on:
+  schedule:
+    # 03:00 UTC каждый день / every day at 03:00 UTC
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  issues: write
+
+jobs:
+  stale:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/stale@v9
+        with:
+          # Не трогает пул-реквесты - только issues. / PRs are left alone, issues only.
+          days-before-pr-stale: -1
+          days-before-pr-close: -1
+
+          days-before-issue-stale: 14
+          days-before-issue-close: 7
+
+          stale-issue-label: "stale"
+          exempt-issue-labels: "pinned,in progress,bug,confirmed"
+
+          stale-issue-message: >
+            Это issue не получало ответов 14 дней и будет закрыто автоматически
+            через 7 дней, если не появится активность. Если проблема всё ещё
+            актуальна - просто оставьте комментарий, и метка снимется сама.
+
+
+            This issue has had no activity for 14 days and will close
+            automatically in 7 days unless something changes. If it's still
+            relevant, just leave a comment and the label will come off on its own.
+
+          close-issue-message: >
+            Закрыто из-за отсутствия активности. Если проблема всё ещё
+            актуальна - откройте новый issue со ссылкой на этот.
+
+
+            Closed due to inactivity. If this is still relevant, please open a
+            new issue linking back to this one.

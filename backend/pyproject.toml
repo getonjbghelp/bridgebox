@@ -1,0 +1,39 @@
+[project]
+name = "bridgebox"
+version = "0.1.0b1"
+description = "Local proxy bridge for Jackbox Games DPI-bypass routing via Zapret"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.7",
+    "pyyaml>=6.0",
+    "aiohttp>=3.9",
+    # >=50: 49.0.0 carries PYSEC-2026-3552, and this is the package that
+    # issues the local CA and leaf certificate.
+    "cryptography>=50.0",
+    "pywebview>=5.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+]
+# Only tools/build_portable.py imports these - never installed into, or
+# needed by, a running BridgeBox. Split from dev so a plain `pip install
+# -e ".[dev]"` (what run.bat does on every launch) doesn't pull in PyInstaller
+# and Pillow for a checkout nobody is packaging.
+build = [
+    "pyinstaller>=6.10",
+    "pillow>=10.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["bridgebox*"]

@@ -1,0 +1,19 @@
+.bb-diag-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-full);
+  flex: none;
+}
+
+.bb-diag-badge--ok {
+  color: var(--color-success);
+  background: var(--color-success-soft);
+}
+
+.bb-diag-badge--error {
+  color: var(--color-danger);
+  background: var(--color-danger-soft);
+}

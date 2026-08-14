@@ -1,0 +1,534 @@
+/* First-run setup. Owns the whole viewport - there is no sidebar behind it,
+   so unlike every other screen this file sets its own page frame. */
+
+.bb-setup {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  background: var(--color-bg);
+}
+
+.bb-setup__stage {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: var(--space-7) var(--space-5) var(--space-5);
+}
+
+.bb-setup__panel {
+  width: 100%;
+  max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  text-align: center;
+  /* The stage centres the panel vertically, so a taller step shifted every
+     step's content upward on arrival - most visibly going from 1 to 2. A floor
+     tall enough for the shorter steps means the short ones reserve the height
+     instead of the tall ones stealing it, and the panel stops moving between
+     them. Steps taller than this still grow; only the jump is gone. */
+  min-height: 30rem;
+  justify-content: center;
+}
+
+/* ---- hero mark --------------------------------------------------------- */
+
+.bb-setup__icon {
+  align-self: center;
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 84px;
+  height: 84px;
+  margin-bottom: var(--space-5);
+  border-radius: var(--radius-full);
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+}
+
+.bb-setup__icon--success {
+  background: var(--color-success-soft);
+  color: var(--color-success);
+}
+
+/* The monogram is an <svg> with no intrinsic size, so it filled the whole
+   84px chip edge to edge while every other step's icon sits at 40px with room
+   around it. Height, not width - the mark's own aspect ratio does the rest.
+   `display: block` + `margin: auto` because an inline svg sits on the text
+   baseline, which left it visibly low in the circle even with place-items. */
+.bb-setup__icon .bb-logo--monogram {
+  display: block;
+  height: 34px;
+  width: auto;
+  margin: auto;
+}
+
+.bb-setup__title {
+  margin-bottom: var(--space-3);
+}
+
+.bb-setup__body {
+  margin: 0 auto var(--space-5);
+  max-width: 36ch;
+}
+
+/* ---- shared blocks ----------------------------------------------------- */
+
+.bb-setup__note {
+  margin: 0 auto var(--space-4);
+  max-width: 40ch;
+}
+
+.bb-setup__error {
+  margin-top: var(--space-3);
+  color: var(--color-danger);
+}
+
+.bb-setup__ok {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-base);
+  color: var(--color-success);
+}
+
+.bb-setup__ok strong {
+  font-weight: var(--weight-semibold);
+}
+
+/* Every step's buttons start at the same distance from the content above,
+   so the primary action doesn't wander vertically between steps. */
+.bb-setup__actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-5);
+}
+
+.bb-setup__skip-warning {
+  margin: var(--space-1) auto 0;
+  max-width: 38ch;
+  color: var(--color-warning);
+}
+
+.bb-setup__modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--space-4);
+}
+
+/* ---- welcome: preference rows ------------------------------------------ */
+
+.bb-setup__prefs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  text-align: left;
+}
+
+.bb-setup__pref {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-sunken);
+}
+
+.bb-setup__pref-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.bb-setup__pref-label {
+  color: var(--color-text-primary);
+}
+
+/* ---- certificate: the lock shackle -------------------------------------- */
+
+/* Drops into the body when the CA lands. fill-box so the origin is the
+   shackle's own box rather than the whole SVG canvas. */
+.bb-setup__lock .bb-lock__shackle--open {
+  transform: translateY(-1.6px);
+  transform-box: fill-box;
+  transform-origin: center;
+  opacity: 0.7;
+}
+
+.bb-setup__lock svg path,
+.bb-setup__lock svg rect {
+  transition: transform var(--dur-slow) var(--ease-out), opacity var(--dur-base) var(--ease-out);
+}
+
+/* ---- strategy: radar, progress, results --------------------------------- */
+
+.bb-setup__radar {
+  display: grid;
+  place-items: center;
+}
+
+/* transform-box: view-box keeps the origin on the icon's 20x20 canvas rather
+   than on the wedge's own bounding box - rotating about that would make the
+   sweep orbit the centre instead of pivoting around it. */
+.bb-setup__radar--scanning .bb-radar__sweep {
+  transform-box: view-box;
+  transform-origin: 50% 50%;
+  animation: bb-radar-sweep 1.6s linear infinite;
+}
+
+@keyframes bb-radar-sweep {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.bb-setup__progress {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  text-align: left;
+}
+
+.bb-setup__manual-pick {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  /* Not text-align: left like .bb-setup__progress above - this block is a
+     hint, a select, and two buttons, none of them multi-column content that
+     reads better left-aligned. Left-aligning it broke the one thing that
+     made it look like the rest of the wizard: every other step's text is
+     centered via .bb-setup__panel, and this was the one place quietly
+     overriding that. */
+}
+
+/* Two full-width buttons stacked with no wrapper had nothing between them -
+   .bb-setup__panel is a flex column with no gap of its own, and Button
+   carries no margin, so "Запустить авто-тест" and "Выбрать из списка" sat
+   edge to edge.
+
+   No margin-bottom: an earlier version added one on top of
+   .bb-setup__actions' own 24px margin-top to separate this pair from
+   "Далее"/"Пропустить" below as two distinct clusters, but reported back as
+   too much air between "Выбрать из списка" and "Далее" - the 24px
+   .bb-setup__actions already contributes on its own is enough. */
+.bb-setup__button-stack {
+  display: flex;
+  flex-direction: column;
+  /* --space-2 (8px) first, then reported again as still too tight - two
+     full-width buttons that close together read as one fused control
+     rather than a primary action and a separate alternative below it.
+     --space-4 matches the gap .bb-setup__prefs already uses between its own
+     stacked rows - an amount established elsewhere as "clearly two things",
+     not a new number picked to look right once. */
+  gap: var(--space-4);
+}
+
+.bb-setup__progress-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.bb-setup__percent {
+  font-size: var(--text-xl);
+  font-weight: var(--weight-semibold);
+  color: var(--color-accent);
+}
+
+.bb-setup__bar {
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--color-surface-sunken);
+  overflow: hidden;
+}
+
+.bb-setup__bar-fill {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: var(--radius-full);
+  background: var(--color-accent);
+}
+
+.bb-setup__results {
+  list-style: none;
+  margin: 0 0 var(--space-3);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  /* Twelve-odd strategies would push the buttons off screen; this keeps the
+     primary action reachable without scrolling the page for it. */
+  max-height: 188px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  text-align: left;
+}
+
+.bb-setup__result {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-sunken);
+  color: var(--color-text-primary);
+  font-size: var(--text-base);
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-standard),
+    border-color var(--dur-fast) var(--ease-standard);
+}
+
+.bb-setup__result:not(:disabled):hover {
+  background: var(--color-surface);
+  border-color: var(--color-border-strong);
+}
+
+.bb-setup__result[aria-pressed='true'] {
+  background: var(--color-accent-soft);
+  border-color: var(--color-accent);
+}
+
+.bb-setup__result:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.bb-setup__result-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bb-setup__result-ms {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+}
+
+.bb-setup__result-ms--bad {
+  color: var(--color-text-tertiary);
+}
+
+/* ---- updates: choice cards ---------------------------------------------- */
+
+.bb-setup__choices {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  text-align: left;
+}
+
+.bb-setup__choice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color var(--dur-fast) var(--ease-standard),
+    background-color var(--dur-fast) var(--ease-standard);
+}
+
+.bb-setup__choice:hover {
+  border-color: var(--color-border-strong);
+}
+
+.bb-setup__choice[aria-checked='true'] {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+}
+
+.bb-setup__choice-mark {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  border: 1.5px solid var(--color-border-strong);
+  border-radius: var(--radius-full);
+  transition: border-color var(--dur-fast) var(--ease-standard),
+    box-shadow var(--dur-fast) var(--ease-standard);
+}
+
+/* The dot is an inset ring rather than a child element - one box, and it
+   scales from nothing on selection instead of popping into existence. */
+.bb-setup__choice[aria-checked='true'] .bb-setup__choice-mark {
+  border-color: var(--color-accent);
+  box-shadow: inset 0 0 0 4px var(--color-accent);
+}
+
+.bb-setup__choice-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.bb-setup__choice-label {
+  color: var(--color-text-primary);
+  font-weight: var(--weight-medium);
+}
+
+/* ---- connect: the launch option ----------------------------------------- */
+
+.bb-setup__code {
+  display: block;
+  margin-bottom: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-sunken);
+  color: var(--color-text-primary);
+  font-size: var(--text-sm);
+  /* The address makes this longer than the panel on a narrow window, and a
+     launch option split mid-token is worse than one that wraps anywhere. */
+  overflow-wrap: anywhere;
+  /* Centred like everything else on the panel. Left-aligned, this one line
+     was the only thing on the step that did not share the centre axis. */
+  text-align: center;
+}
+
+/* Wider measure than .bb-setup__note so it stops breaking into four ragged
+   lines, and real space above it: with margin 0 it sat hard against the copy
+   button, so the paragraph looked like part of the button rather than a note
+   about the step. Space below comes from .bb-setup__actions' own margin. */
+.bb-setup__footnote {
+  margin: var(--space-4) auto 0;
+  max-width: 46ch;
+}
+
+/* ---- done: the burst ---------------------------------------------------- */
+
+.bb-setup__burst {
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+
+.bb-setup__spark {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 5px;
+  height: 5px;
+  margin: -2.5px 0 0 -2.5px;
+  border-radius: var(--radius-full);
+  background: var(--color-success);
+  animation: bb-setup-spark 720ms var(--ease-out) both;
+}
+
+@keyframes bb-setup-spark {
+  from {
+    opacity: 0;
+    transform: rotate(var(--spark-angle)) translateY(-8px) scale(0.3);
+  }
+  55% {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+    transform: rotate(var(--spark-angle)) translateY(-38px) scale(1);
+  }
+}
+
+/* ---- footer: back + step dots -------------------------------------------- */
+
+.bb-setup__footer {
+  flex: none;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5) var(--space-5);
+}
+
+.bb-setup__back {
+  justify-self: start;
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--color-text-tertiary);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-standard);
+}
+
+.bb-setup__back:hover {
+  color: var(--color-text-primary);
+}
+
+/* Keeps its box so the footer height never changes between steps - see the
+   comment at its call site. */
+.bb-setup__back[data-hidden='true'] {
+  visibility: hidden;
+}
+
+.bb-setup__dots {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.bb-setup__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--color-border-strong);
+  /* Genuinely `width`, not a transform, and it should stay that way.
+     Measured, both rendered at the same painted 22x6: growing by width keeps
+     each end cap circular at 3x3px, while scaleX(3.67) leaves the radius
+     resolved against the unscaled 6px box and then stretches the whole result
+     - 11x3px caps, an ellipse. Same trap the progress bar above avoids by
+     animating width too.
+
+     The layout cost is one dot per step reflowing once per step change, inside
+     a fixed-height footer - not a hot path. Deliberately not a count: STEPS
+     decides how many there are, and it has already grown once. */
+  transition: width var(--dur-base) var(--ease-out),
+    background-color var(--dur-base) var(--ease-standard);
+}
+
+.bb-setup__dot[data-state='done'] {
+  background: var(--color-accent);
+  opacity: 0.45;
+}
+
+/* The current step is a pill rather than a bigger circle: width is readable
+   at a glance in a row of dots in a way that a 2px diameter change is not. */
+.bb-setup__dot[data-state='current'] {
+  width: 22px;
+  background: var(--color-accent);
+}
+
+/* Settings' «Анимации интерфейса». lib/motion.ts gates framer only; these
+   three are CSS and need the mirrored root attribute. */
+:root[data-animations='off'] .bb-setup__radar--scanning .bb-radar__sweep,
+:root[data-animations='off'] .bb-setup__spark {
+  animation: none;
+}
+
+:root[data-animations='off'] .bb-setup__spark {
+  opacity: 0;
+}

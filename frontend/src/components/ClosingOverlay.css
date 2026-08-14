@@ -1,0 +1,87 @@
+/* Above --z-toast: this is the last thing the app ever paints, and nothing -
+   not a modal that happened to be open, not a toast mid-fade - may sit on top
+   of it or take a click through it. */
+.bb-closing {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  background: rgb(8 13 22 / 55%);
+  backdrop-filter: blur(8px);
+  animation: bb-closing-in var(--dur-fast) ease-out;
+}
+
+:root[data-theme='dark'] .bb-closing {
+  background: rgb(0 0 0 / 68%);
+}
+
+.bb-closing__panel {
+  width: min(360px, calc(100vw - var(--space-6) * 2));
+  padding: var(--space-5);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-lg);
+  text-align: center;
+}
+
+.bb-closing__title {
+  margin: 0 0 var(--space-2);
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.bb-closing__body {
+  margin: 0 0 var(--space-5);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+}
+
+.bb-closing__track {
+  height: 4px;
+  border-radius: var(--radius-full);
+  background: var(--color-surface-sunken);
+  overflow: hidden;
+}
+
+/* Indeterminate: shutdown has no measurable progress, so the bar reports
+   liveness, not completion. */
+.bb-closing__slider {
+  width: 40%;
+  height: 100%;
+  border-radius: var(--radius-full);
+  background: var(--color-accent);
+  animation: bb-closing-slide 1.1s ease-in-out infinite;
+}
+
+/* The one animation the reduced-motion gate does NOT zero out: with it
+   stopped, the panel says "закрытие…" beside a bar that never moves, which
+   reads as the freeze this whole screen exists to disprove. Slowed instead.
+   !important because global.css zeroes every animation under the same gate. */
+:root[data-animations='off'] .bb-closing__slider {
+  animation: bb-closing-slide 2.4s ease-in-out infinite !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bb-closing__slider {
+    animation: bb-closing-slide 2.4s ease-in-out infinite !important;
+  }
+}
+
+@keyframes bb-closing-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes bb-closing-slide {
+  0% {
+    transform: translateX(-110%);
+  }
+  100% {
+    transform: translateX(260%);
+  }
+}

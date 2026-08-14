@@ -1,0 +1,263 @@
+.bb-home {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--space-5);
+  /* No padding-top of its own: .bb-app__content already pays 48px above this,
+     and the two stacked put the wordmark a third of the way down an empty
+     screen. min-height follows suit - it was compensating for the padding. */
+  min-height: 100%;
+}
+
+/* The wordmark itself, not a lettered badge. This is the app's largest brand
+   moment and it used to disagree with the rail, which now shows the real
+   logo - two different marks for one product is worse than either. */
+.bb-home__mark {
+  /* Stays at the top. Only the footer travels down (its margin-top: auto),
+     which is what empties the bottom of the screen without dragging the
+     wordmark and toggle into the middle with it.
+     No margin-bottom: the parent's 24px gap already separates the wordmark
+     from the toggle, and the two stacked made it 40px - the widest gap on the
+     screen, between the two most closely related things. */
+  color: var(--color-text-primary);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+/* See BrandLogo.css - light theme's accent navy is the brand colour there. */
+:root[data-theme='light'] .bb-home__mark {
+  color: var(--color-accent);
+}
+
+.bb-home__mark .bb-logo {
+  /* Height drives it; the width follows the wordmark's own aspect ratio. */
+  height: 44px;
+  width: auto;
+}
+
+.bb-home__toggle-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.bb-home__status {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
+.bb-home__status--on {
+  color: var(--color-success);
+}
+
+.bb-home__error {
+  font-size: 12px;
+  color: var(--color-danger);
+  max-width: 320px;
+  text-align: center;
+}
+
+/* A warning, not an error: nothing failed, something outside the app turned
+   the bridge off. Boxed rather than bare text so it reads as a message about
+   an event, not as the toggle's own status line. */
+.bb-home__notice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  max-width: 360px;
+  padding: 8px 10px;
+  border: 1px solid var(--color-warning);
+  border-radius: var(--radius-sm);
+  background: var(--color-warning-soft);
+  color: var(--color-text-primary);
+  font-size: 12px;
+  line-height: 1.45;
+  text-align: left;
+}
+
+.bb-home__notice-close {
+  border: none;
+  background: none;
+  padding: 0;
+  margin-left: auto;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+}
+
+.bb-home__notice-close:hover {
+  color: var(--color-text-primary);
+}
+
+/* Centred as a pair: the row grows to the right as the address appears, and
+   because the row is centred the toggle travels left by half that width. That
+   sideways drift IS the effect - the address reads as coming out of the
+   toggle rather than appearing beside a toggle bolted to the middle. */
+.bb-home__toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* The animated box: no padding or border of its own, so the width framer
+   measures is the width it ends at. Clips the panel below as it opens. */
+.bb-home__address-clip {
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.bb-home__address {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  background: var(--color-surface-sunken);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
+  font-size: 14px;
+  /* Must not reflow into a tall column while the clip above is narrow. */
+  white-space: nowrap;
+  width: max-content;
+}
+
+.bb-home__copy {
+  border: none;
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  display: flex;
+}
+.bb-home__copy:hover {
+  background: var(--color-border);
+}
+
+/* height:auto is animated on the wrapper, so the inner block owns the
+   padding - otherwise the collapse leaves a gap behind. */
+.bb-home__diag {
+  width: 100%;
+  max-width: 420px;
+  overflow: hidden;
+}
+
+.bb-home__diag-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+}
+
+.bb-home__diag-steps {
+  margin: var(--space-4) 0 0;
+  padding: var(--space-3) var(--space-4) var(--space-3) var(--space-6);
+  text-align: left;
+  list-style-position: outside;
+  background: var(--color-surface-sunken);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.bb-home__diag-error {
+  margin: var(--space-2) 0 0;
+  color: var(--color-danger);
+  text-align: left;
+}
+
+/* "Как подключить игру" and the ticker travel together at the bottom, so the
+   diagnostics can grow without pushing either of them around. */
+.bb-home__footer {
+  /* margin-top: auto is load-bearing - it is what keeps the toggle at the
+     optical centre while the diagnostics block expands below it. Replacing it
+     with a fixed value brings back the jump the animation was built to avoid.
+     The padding above it is what was making the gap look like dead space, and
+     that can go. */
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+}
+
+.bb-home__ticker {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  max-width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+  cursor: pointer;
+}
+.bb-home__ticker:hover {
+  color: var(--color-text-secondary);
+}
+
+/* A fixed box for text whose width swings from "bol-van" to "Samuel Colvin
+   and contributors". Left to size itself it widened the centred column and
+   shifted the whole screen sideways on every turnover. Height is fixed for
+   the same reason vertically: the two spans overlap during the swap. */
+.bb-home__ticker-slot {
+  position: relative;
+  display: block;
+  height: 18px;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
+.bb-home__ticker-text {
+  display: block;
+  line-height: 18px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bb-home__credits-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.bb-home__credits-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.bb-home__credits-row a {
+  color: var(--color-accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+.bb-home__credits-row a:hover {
+  text-decoration: underline;
+}
+
+/* "A new Zapret is available" - sits above the footer buttons, quiet enough
+   that it does not compete with the toggle for attention. Overflow hidden
+   because the wrapper animates height: 0 -> auto on arrival. */
+.bb-home__update {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  overflow: hidden;
+}

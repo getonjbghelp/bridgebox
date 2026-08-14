@@ -1,0 +1,59 @@
+/* The column IntegrityBanner sits above: .bb-app is a ROW (sidebar beside
+   content), so the banner needs this wrapper to appear above that row rather
+   than become a third column inside it. */
+.bb-app-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+}
+
+.bb-app {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+}
+
+.bb-app__content {
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--space-7) var(--space-6);
+  display: flex;
+  justify-content: center;
+  /* The inactive screens are display:none, so they take no space here; this
+     keeps the active one from being stretched by a taller hidden sibling. */
+  min-width: 0;
+}
+
+.bb-app__screen {
+  display: none;
+  width: 100%;
+  max-width: 720px;
+}
+
+.bb-app__screen[data-active='true'] {
+  display: block;
+  /* Replays every time the screen is shown again: a display:none element
+     that becomes displayed restarts its animations, which is the whole
+     reason this is CSS and not framer-motion. */
+  animation: bb-screen-in var(--dur-slow) var(--ease-out);
+}
+
+@keyframes bb-screen-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Settings' "Анимации интерфейса". The JS gate in lib/motion.ts only reaches
+   framer-motion, so a CSS animation needs the mirrored root attribute. */
+:root[data-animations='off'] .bb-app__screen[data-active='true'] {
+  animation: none;
+}

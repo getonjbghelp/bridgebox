@@ -1,0 +1,224 @@
+/* BridgeBox design tokens.
+ *
+ * Three layers: primitive ramp -> semantic -> component. Only ever reference
+ * the semantic names (--color-accent, --text-lg) from a component; the raw
+ * --navy-* / --slate-* steps exist so both themes can be expressed as two
+ * mappings of one scale instead of two palettes that drift apart.
+ *
+ * House rules, in force everywhere:
+ *   - No gradients. Not on buttons, not on backgrounds, not "subtle" ones.
+ *   - Shadows only on things that genuinely float above the page: modals,
+ *     the toggle knob, a popover. Never on a card or a section - borders and
+ *     --color-surface-sunken do the separating.
+ *   - One accent colour, doing one job per screen. If two things on a screen
+ *     are both accent-blue, one of them is wrong.
+ *   - Light theme is the default and gets designed first.
+ */
+
+:root {
+  /* Tells the engine which way the system colours point. Without it the UA
+     keeps resolving CanvasText/Canvas as light-mode - so <dialog>'s UA rule
+     `color: CanvasText` painted every modal's inherited text pure black on a
+     dark surface, and native <select> popups and scrollbars came out light.
+     It has to be declared for BOTH themes, not just dark. */
+  color-scheme: light;
+
+  /* ---- primitive: navy ramp (white -> near-black, one hue family) ------ */
+  --navy-50: #f5f8ff;
+  --navy-100: #e6edff;
+  --navy-200: #c7d7fe;
+  --navy-300: #a3bffa;
+  --navy-400: #60a5fa;
+  --navy-500: #2563eb;
+  --navy-600: #1d4ed8;
+  --navy-700: #1e40af;
+  --navy-800: #1e3a8a;
+  --navy-900: #172554;
+  --navy-950: #0a0f1e;
+
+  /* ---- primitive: neutrals (cool grey, keeps surfaces from going blue) - */
+  --slate-0: #ffffff;
+  --slate-50: #f8fafc;
+  --slate-100: #f1f5f9;
+  --slate-200: #e2e8f0;
+  --slate-300: #cbd5e1;
+  --slate-400: #94a3b8;
+  --slate-500: #64748b;
+  --slate-600: #475569;
+  --slate-700: #334155;
+  --slate-800: #1e293b;
+  --slate-900: #0f172a;
+  --slate-950: #080d16;
+
+  /* ---- semantic: surfaces ---------------------------------------------- */
+  --color-bg: var(--slate-50);
+  --color-surface: var(--slate-0);
+  --color-surface-sunken: var(--slate-100);
+  --color-border: var(--slate-200);
+  --color-border-strong: var(--slate-300);
+
+  /* ---- semantic: text -------------------------------------------------- */
+  /* Secondary and tertiary are off-ramp values rather than raw --slate- steps
+     because the ramp's own 400/500 could not carry body text: --slate-400 on
+     white measured 2.45:1, far under the 4.5:1 AA needs, and every hint and
+     caption in the app uses tertiary. These are the lightest greys that still
+     clear 4.5:1 against all three light surfaces (surface, bg, sunken). */
+  --color-heading: var(--navy-900); /* display type only - body stays neutral */
+  --color-text-primary: var(--slate-900);
+  --color-text-secondary: #5b6472; /* 5.46:1 worst case */
+  --color-text-tertiary: #646b79; /* 4.89:1 worst case */
+  --color-text-on-accent: var(--slate-0);
+
+  /* ---- semantic: accent ------------------------------------------------ */
+  --color-accent: var(--navy-600);
+  --color-accent-hover: var(--navy-700);
+  --color-accent-pressed: var(--navy-800);
+  --color-accent-soft: var(--navy-100);
+
+  /* ---- semantic: status ------------------------------------------------ */
+  --color-success: #15803d;
+  --color-success-soft: #dcfce7;
+  --color-warning: #b45309;
+  --color-warning-soft: #fef3c7;
+  --color-danger: #b91c1c;
+  --color-danger-soft: #fee2e2;
+
+  /* ---- semantic: log levels -------------------------------------------- */
+  /* Their own scale rather than reusing status: a WARNING log line is not the
+     same signal as a failed action, and the log list needs four values that
+     stay distinguishable side by side in both themes. */
+  --color-level-debug: #5b6472; /* not --slate-500: that lands at 4.34:1 on sunken */
+  --color-level-debug-soft: var(--slate-100);
+  --color-level-info: var(--navy-600);
+  --color-level-info-soft: var(--navy-100);
+  --color-level-warning: #b45309;
+  --color-level-warning-soft: #fef3c7;
+  --color-level-error: #b91c1c;
+  --color-level-error-soft: #fee2e2;
+
+  /* ---- spacing (4px base) ---------------------------------------------- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+
+  /* ---- radii ----------------------------------------------------------- */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-full: 999px;
+
+  /* ---- typography ------------------------------------------------------ */
+  --font-display: 'Manrope', 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
+  --font-family: 'Inter', 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Cascadia Mono', 'Consolas', monospace;
+
+  --text-2xs: 11px;
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-base: 14px;
+  --text-lg: 16px;
+  --text-xl: 20px;
+  --text-2xl: 26px;
+  --text-3xl: 34px;
+
+  --leading-tight: 1.15;
+  --leading-snug: 1.3;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.65;
+
+  /* Optical sizing by hand: large text needs negative tracking, small text
+     needs a touch positive. One letter-spacing for every size is the single
+     most common way type ends up looking generic. */
+  --tracking-tighter: -0.022em;
+  --tracking-tight: -0.012em;
+  --tracking-normal: 0;
+  --tracking-wide: 0.01em;
+  --tracking-wider: 0.06em;
+
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+
+  /* ---- elevation (overlays only - see house rules) --------------------- */
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --shadow-md: 0 4px 16px rgba(15, 23, 42, 0.08);
+  --shadow-lg: 0 12px 40px rgba(15, 23, 42, 0.16);
+
+  /* ---- z-index --------------------------------------------------------- */
+  --z-sidebar: 10;
+  --z-sticky: 20;
+  --z-overlay: 100;
+  --z-modal: 110;
+  --z-toast: 120;
+
+  /* ---- motion ---------------------------------------------------------- */
+  /* Spring configs for framer live in lib/motion.ts; these are for CSS
+     transitions and keyframes, which the JS animation gate cannot reach.
+     global.css zeroes them under prefers-reduced-motion. */
+  --dur-instant: 90ms;
+  --dur-fast: 140ms;
+  --dur-base: 200ms;
+  --dur-slow: 320ms;
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  /* ---- focus ----------------------------------------------------------- */
+  /* Two rings: an inner one in the page colour so the outer stays legible on
+     any surface, including on top of the accent itself. */
+  --focus-ring: 0 0 0 2px var(--color-bg), 0 0 0 4px var(--color-accent);
+
+  /* ---- component ------------------------------------------------------- */
+  --sidebar-width: 232px;
+  --sidebar-width-collapsed: 64px;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --color-bg: var(--navy-950);
+  --color-surface: #111a2e;
+  --color-surface-sunken: #0d1424;
+  --color-border: #223049;
+  --color-border-strong: #33456485;
+
+  --color-heading: var(--navy-100);
+  --color-text-primary: #e8eef8;
+  --color-text-secondary: #9aa6bd; /* 7.07:1 worst case */
+  --color-text-tertiary: #7d8798; /* was #6b7689 - only 3.78:1, under AA */
+  /* Dark accent is light enough that white-on-it fails contrast - the label
+     goes dark instead. Light theme inherits its own value; this is exactly
+     the override that was missing before. */
+  --color-text-on-accent: var(--navy-950);
+
+  --color-accent: var(--navy-400);
+  --color-accent-hover: #7db4fb;
+  --color-accent-pressed: var(--navy-300);
+  --color-accent-soft: #17233d;
+
+  --color-success: #4ade80;
+  --color-success-soft: #0d2818;
+  --color-warning: #fbbf24;
+  --color-warning-soft: #2b1f06;
+  --color-danger: #f87171;
+  --color-danger-soft: #2a1518;
+
+  --color-level-debug: var(--slate-400);
+  --color-level-debug-soft: #161f31;
+  --color-level-info: var(--navy-400);
+  --color-level-info-soft: #17233d;
+  --color-level-warning: #fbbf24;
+  --color-level-warning-soft: #2b1f06;
+  --color-level-error: #f87171;
+  --color-level-error-soft: #2a1518;
+
+  /* Shadows have to get heavier in the dark or they vanish entirely. */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.55);
+}

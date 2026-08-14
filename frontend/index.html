@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BridgeBox</title>
+    <!--
+      Everything below runs before the 433KB module bundle is even fetched, and
+      that is the point. The window used to sit blank through WebView2 start-up,
+      the bundle parse, and then App.tsx's own `return null` while get_config
+      answered - React cannot shorten the first two, because none of its code
+      has run yet. Static markup can, and the browser paints it the moment the
+      document is parsed.
+    -->
+    <script>
+      // Which theme to paint the skeleton in.
+      //
+      // config.yaml stays the single source of truth - MotionPrefsContext
+      // overwrites this the instant get_config answers, and a mismatch
+      // self-corrects within a frame. This is a render hint so the first paint
+      // is not white on a machine set to dark; the very first launch of all has
+      // no hint and gets "light", which is the schema default anyway.
+      try {
+        var hint = localStorage.getItem('bb-theme-hint')
+        if (hint === 'dark' || hint === 'light') {
+          document.documentElement.dataset.theme = hint
+        }
+      } catch (e) {
+        /* storage disabled - the default is correct often enough */
+      }
+    </script>
+    <style>
+      /* Duplicated from tokens.css rather than imported: a stylesheet is
+         another round trip, and this has to paint on the first one. They must
+         match EXACTLY - a skeleton two shades off the real background makes
+         the handover to React look like a flash. test/bootSkeleton.test.ts
+         reads both files and fails if they ever drift.
+           --bb-boot-bg = --color-bg      (--slate-50  / --navy-950)
+           --bb-boot-fg = --color-border  (--slate-200 / dark border) */
+      :root {
+        --bb-boot-bg: #f8fafc;
+        --bb-boot-fg: #e2e8f0;
+      }
+      :root[data-theme='dark'] {
+        --bb-boot-bg: #0a0f1e;
+        --bb-boot-fg: #223049;
+      }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        background: var(--bb-boot-bg);
+      }
+      #bb-boot {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      /* The wordmark's own proportions, so what appears first is the shape the
+         real logo occupies rather than a generic spinner in the wrong place.
+         No text: the app is not ready to say anything yet, and a "загрузка…"
+         that flashes for 200ms reads as a stutter. */
+      #bb-boot span {
+        display: block;
+        width: 168px;
+        height: 26px;
+        border-radius: 6px;
+        background: var(--bb-boot-fg);
+        animation: bb-boot-pulse 1.4s ease-in-out infinite;
+      }
+      @keyframes bb-boot-pulse {
+        0%,
+        100% {
+          opacity: 0.55;
+        }
+        50% {
+          opacity: 1;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #bb-boot span {
+          animation: none;
+        }
+      }
+      /* Removed by main.tsx once React has painted. Kept as a class rather than
+         a node removal so the fade can finish without the element jumping. */
+      #bb-boot.bb-boot--done {
+        opacity: 0;
+        transition: opacity 160ms ease-out;
+        pointer-events: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="bb-boot"><span></span></div>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

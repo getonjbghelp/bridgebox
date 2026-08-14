@@ -1,0 +1,75 @@
+.bb-info__mark {
+  color: var(--color-text-primary);
+  margin-bottom: var(--space-3);
+}
+
+:root[data-theme='light'] .bb-info__mark {
+  color: var(--color-accent);
+}
+
+.bb-info__mark .bb-logo {
+  height: 32px;
+  width: auto;
+}
+
+.bb-info__tagline {
+  max-width: 56ch;
+  color: var(--color-text-secondary);
+  margin: 0 0 var(--space-6);
+}
+
+.bb-info__license-text {
+  margin: var(--space-3) 0 var(--space-6);
+}
+
+.bb-info__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* Icon-only: the hint is the native `title` tooltip, same house style the
+   collapsed sidebar already uses instead of a custom tooltip component. */
+.bb-info__link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--color-border-strong);
+  background: transparent;
+  color: var(--color-text-primary);
+  cursor: pointer;
+  font: inherit;
+  text-decoration: none;
+  transition:
+    border-color var(--dur-fast) var(--ease-standard),
+    color var(--dur-fast) var(--ease-standard);
+}
+
+.bb-info__link:hover,
+.bb-info__link:focus-visible {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+  text-decoration: none;
+}
+
+.bb-info__custom-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+}
+
+.bb-info__custom-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.bb-info__popup-link {
+  display: inline-block;
+  margin-top: var(--space-4);
+  color: var(--color-accent);
+}

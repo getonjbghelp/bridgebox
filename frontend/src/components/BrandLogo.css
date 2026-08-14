@@ -1,0 +1,96 @@
+/* The wordmark collapsing into "bb".
+ *
+ * Deliberately CSS transitions rather than framer-motion. The rail's own width
+ * is a CSS transition (Sidebar.css), and the brief was that the two move as one
+ * thing - a spring next to a cubic-bezier cannot be synchronous no matter how
+ * they are tuned, because they are different curves. Sharing --dur-slow and
+ * --ease-out makes them the same motion by construction, and it costs no JS.
+ *
+ * The svg keeps its full wordmark width the whole time, so no glyph is ever
+ * rescaled or reflowed mid-flight - only opacity and transform move.
+ */
+
+/* Fixed width, and nothing here animates layout.
+ *
+ * An earlier version shrank this slot from the wordmark's width to the
+ * monogram's, to "make room" in the collapsed rail. That turned out to be
+ * unnecessary once the brand stopped centring itself with justify-content:
+ * nothing measures this element, and the rail's own overflow:hidden already
+ * clips it. Checked rather than assumed - collapsed, the eight non-b glyphs
+ * are at opacity 0 and the monogram occupies x 16.3..47.7 of a 64px rail, so
+ * the window the slot was closing had nothing left in it to hide.
+ *
+ * Only transform moves, on the rail's 320ms/--ease-out curve, so the slot
+ * slides to the centre of the collapsed box without a layout pass.
+ */
+.bb-logo-slot {
+  /* From BrandLogo.tsx, which derives it from the measured glyph boxes. */
+  width: var(--bb-logo-wordmark);
+  height: var(--bb-logo-height);
+  flex-shrink: 0;
+  color: var(--color-text-primary);
+  transition: transform var(--dur-slow) var(--ease-out);
+}
+
+/* Light theme only: the accent navy reads as the brand's own colour there.
+   In dark theme --color-accent is a pale blue tuned for contrast against a
+   dark surface, not for a large wordmark, so dark theme keeps the text
+   colour above instead. */
+:root[data-theme='light'] .bb-logo-slot {
+  color: var(--color-accent);
+}
+
+/* No size here on purpose: the logo is used at two very different scales (the
+   rail and the home hero), and each caller sizes it. The viewBox does the rest. */
+.bb-logo {
+  display: block;
+  fill: currentColor;
+}
+
+/* Inside the rail the svg is the wordmark's full width at all times; the rail's
+   own overflow:hidden is what hides the part that no longer fits. */
+.bb-logo-slot .bb-logo {
+  width: var(--bb-logo-wordmark);
+  height: var(--bb-logo-height);
+}
+
+/* transform-box: view-box is the modern default for SVG, but Chromium only
+   settled on it recently enough to be worth stating - without it the translate
+   below would resolve against the path's own fill box and land elsewhere. */
+.bb-logo__b--second {
+  transform-box: view-box;
+  transition: transform var(--dur-slow) var(--ease-out);
+}
+
+.bb-sidebar[data-collapsed='true'] .bb-logo__b--second {
+  /* px on an SVG element means user units, so this is the measured distance
+     from the second B's left edge back to 30 units past the first B's right. */
+  transform: translateX(-2228.2px);
+}
+
+/* --dur-base (200ms), not --dur-fast: the old 140ms fade finished well before
+   the rail's 320ms width/slide transform did, so every glyph was done
+   dissolving with the box still visibly resizing underneath - two motions
+   plainly running on different clocks. --bb-glyph-out/--bb-glyph-in in
+   BrandLogo.tsx are now spread across a 0-120ms delay budget so
+   delay+duration lands at ~310-320ms either way, and --ease-out (not
+   --ease-standard) matches the curve the transform already uses - one
+   timeline, one curve, same as the rail/second-B pairing above. */
+.bb-logo__glyph {
+  opacity: 1;
+  transition: opacity var(--dur-base) var(--ease-out);
+  transition-delay: var(--bb-glyph-in, 0ms);
+}
+
+.bb-sidebar[data-collapsed='true'] .bb-logo__glyph {
+  opacity: 0;
+  transition-delay: var(--bb-glyph-out, 0ms);
+}
+
+/* Settings' "Анимации интерфейса", same gate the rail and the collapse chevron
+   already use. Off means the two states swap, which is the point. */
+:root[data-animations='off'] .bb-logo-slot,
+:root[data-animations='off'] .bb-logo__b--second,
+:root[data-animations='off'] .bb-logo__glyph {
+  transition: none;
+}

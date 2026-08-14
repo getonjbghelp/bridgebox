@@ -1,0 +1,181 @@
+/* The «Beta» chip beside the wordmark, and the version history behind it. */
+
+.bb-beta {
+  position: relative;
+  display: inline-flex;
+  /* The wordmark is the thing being read; this rides along beside it and must
+     not grow the row it sits in. */
+  align-self: flex-start;
+  margin-top: 4px;
+}
+
+/* One glyph, so a circle rather than the pill the word BETA needed. No
+   uppercase transform or letter-spacing either - both were for the word and
+   both mangle β. */
+.bb-beta__chip {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-full);
+  background: none;
+  color: var(--color-text-tertiary);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-standard),
+    border-color var(--dur-fast) var(--ease-standard);
+}
+
+.bb-beta__chip:hover,
+.bb-beta__chip[aria-expanded='true'] {
+  color: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+/* A real popover, not `title=`: this one carries a version number and a
+   button, and a native tooltip can hold neither. */
+.bb-beta__tip {
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  /* A margin, not translateX(-50%): framer-motion animates `y`, which it
+     writes as an inline `transform`, and that silently replaces any
+     transform set here - the panel rendered hard against the chip's left edge
+     instead of where the margin puts it. A margin is immune to that.
+
+     Not centred under the chip either: the chip sits directly above the
+     home toggle, and a panel centred on it (margin-left: -8.5rem, half the
+     width below) hung far enough left to cover the toggle underneath it.
+     Shifted right so the chip anchors the panel's left portion instead of
+     its middle - clears the toggle with room to spare at the window's
+     minimum 960px width. */
+  left: 50%;
+  margin-left: -3rem;
+  z-index: var(--z-overlay);
+  width: 17rem;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  /* Floats above the page, so it earns a shadow under the house rules. */
+  box-shadow: var(--shadow-lg);
+  text-align: left;
+  /* Hover lives on the chip; the panel must not steal the pointer and flicker
+     the tooltip closed as the cursor crosses into it. */
+  pointer-events: auto;
+}
+
+.bb-beta__tip-title {
+  font-family: var(--font-display);
+  font-size: var(--text-base);
+  font-weight: var(--weight-semibold);
+  color: var(--color-text-primary);
+}
+
+.bb-beta__tip-body {
+  font-size: var(--text-xs);
+  line-height: var(--leading-relaxed);
+  color: var(--color-text-secondary);
+}
+
+.bb-beta__tip-version {
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
+}
+
+/* ---- version history ---------------------------------------------------- */
+
+.bb-changelog {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  /* The badge is rendered inside HomeScreen, which centres its whole column -
+     and a modal is a child of that subtree, so the release notes inherited
+     centred text. Prose and bullet lists have to start on a common left edge
+     to be readable at all. */
+  text-align: left;
+}
+
+.bb-changelog__entry + .bb-changelog__entry {
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--color-border);
+}
+
+.bb-changelog__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.bb-changelog__meta {
+  margin: 2px 0 var(--space-3);
+}
+
+.bb-changelog__badge {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-wider);
+  text-transform: uppercase;
+}
+
+/* Three levels, three existing semantic pairs - no new colours invented. */
+.bb-changelog__badge--minor {
+  background: var(--color-surface-sunken);
+  color: var(--color-text-secondary);
+}
+.bb-changelog__badge--major {
+  background: var(--color-success-soft);
+  color: var(--color-success);
+}
+.bb-changelog__badge--critical {
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+}
+
+.bb-changelog__body p {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
+  color: var(--color-text-secondary);
+}
+
+.bb-changelog__body ul {
+  margin: 0;
+  padding-left: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
+  color: var(--color-text-secondary);
+  /* Explicit: global.css leaves list markers to the UA, which rendered these
+     as hollow circles - a nested-list marker on a top-level list. */
+  list-style: disc;
+}
+
+.bb-changelog__body code {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  padding: 1px 5px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-sunken);
+  color: var(--color-text-primary);
+}
+
+.bb-changelog__body strong {
+  font-weight: var(--weight-semibold);
+  color: var(--color-text-primary);
+}

@@ -1,0 +1,15 @@
+[
+  {
+    "version": "0.1 (b1)",
+    "date": "2026-08-14",
+    "level": "major",
+    "ru": {
+      "title": "Первая бета",
+      "body": "**Встречайте первую публичную бету BridgeBox!** \nBridgeBox создан для того, чтобы обходить блокировки локально на вашем ПК, не полагаясь на сторонние сервера, которые часто падают под нагрузкой в самый разгар игры.\nЭто самый первый релиз, но под капотом уже есть всё необходимое:\n\n- **Поддержка игр:** полный обход для всех частей The Jackbox Party Pack и сольных проектов (кроме Demo TMP3 - из-за другой механики серверов для неё требуется отдельное решение).\n- **Система профилей:** вы сами решаете, куда направлять трафик и какие запросы проксировать.\n- **Умная интеграция с Zapret:** обновление компонентов, автоадаптация и встроенный тест стратегий.\n- **Удобство в фоне:** сворачивание в трей и автозапуск вместе с системой.\n- **Легкий старт:** пошаговый мастер первой настройки и понятные инструкции.\n- **Безопасность и кастомизация:** смена порта для моста и проверка подлинности сборки.\n\n⚠️ Обратите внимание: проект находится на этапе беты, поэтому возможны шероховатости, баги и вылеты. Отзывы и баг-репорты приветствуются!"
+    },
+    "en": {
+      "title": "First beta",
+      "body": "**Introducing the first public beta of BridgeBox!**\nBridgeBox is designed to bypass restrictions locally right on your PC, without relying on third-party servers that often crash under heavy load right in the middle of a game.\nThis is our very first release, but under the hood, it already has everything you need:\n\n- **Game Support:** Full bypass for all The Jackbox Party Pack titles and standalone releases (except for the TMP3 Demo - its different server mechanics require a separate solution).\n- **Profile System:** You decide where to route traffic and which requests to proxy.\n- **Smart Zapret Integration:** Component updates, auto-adaptation, and a built-in strategy tester.\n- **Background Convenience:** Minimize to system tray and auto-start on system boot.\n- **Easy Onboarding:** A step-by-step initial setup wizard and clear instructions.\n- **Security & Customization:** Custom bridge port selection and build authenticity verification.\n\n⚠️ Please note: The project is currently in beta, so you may encounter bugs or occasional crashes. Feedback and bug reports are warmly welcomed!"
+    }
+  }
+]

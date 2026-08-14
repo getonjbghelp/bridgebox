@@ -1,0 +1,33 @@
+name: "Идея / Feature request"
+description: "Предложить улучшение или новую функцию / Suggest an improvement or a new feature"
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: "Перед отправкой / Before submitting"
+      options:
+        - label: >
+            Я поискал(а) среди issues — такую идею ещё не предлагали / I've
+            searched existing issues, this hasn't been suggested already
+          required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: "Какую проблему это решает? / What problem does this solve?"
+      description: >
+        Опишите ситуацию, а не сразу решение — иногда для одной проблемы находится
+        решение попроще того, что предлагаете вы. Имейте ввиду, не гарантировано, что ваша идея попадёт в программу / Describe the situation, not
+        just the fix - sometimes a simpler solution than the one you have in mind
+        turns out to fit better. Please note that it is not guaranteed that your idea will be included in the program.
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: "Как вы это видите? / How would you like it to work?"
+    validations:
+      required: true
