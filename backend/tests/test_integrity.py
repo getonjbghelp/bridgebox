@@ -6,7 +6,10 @@ behind both is the same - the install folder inherits write access for any
 local account - and this module's whole job is catching that after the fact
 rather than preventing it, which the module docstring is explicit about.
 """
+import sys
 from pathlib import Path
+
+import pytest
 
 from bridgebox import integrity
 
@@ -199,6 +202,41 @@ def test_report_serialises_for_the_bridge(tmp_path: Path):
         "verified", "baselineMissing", "changed", "missing", "added", "total", "error",
     }
     assert payload["total"] == 1
+
+
+def test_the_manifest_is_not_pretty_printed(tmp_path: Path):
+    """One line, no indent - the previous multi-line, one-hash-per-line
+    format was itself an invitation to hand-edit a single entry to match a
+    tampered file."""
+    root = _tree(tmp_path)
+    integrity.write_manifest(root)
+
+    assert integrity.manifest_path(root).read_text(encoding="utf-8").count("\n") == 0
+
+
+def test_the_baseline_is_hidden_only_in_a_frozen_build(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Source checkouts want baseline.json visible - a developer poking
+    through their own repo is not who this hides it from. Only a portable
+    build's release folder gets the Windows hidden+system attributes."""
+    root = _tree(tmp_path)
+    calls: list[tuple[str, int]] = []
+    monkeypatch.setattr(
+        integrity.ctypes, "windll",
+        type("_Windll", (), {"kernel32": type("_Kernel32", (), {
+            "SetFileAttributesW": staticmethod(lambda path, attrs: calls.append((path, attrs)) or 1),
+        })()})(),
+        raising=False,
+    )
+
+    monkeypatch.setattr(sys, "frozen", False, raising=False)
+    integrity.write_manifest(root)
+    assert calls == []
+
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    integrity.write_manifest(root)
+    assert len(calls) == 1
+    assert calls[0][0] == str(integrity.manifest_path(root))
+    assert calls[0][1] == integrity._HIDE_ATTRS
 
 
 def test_the_file_list_is_capped(tmp_path: Path):

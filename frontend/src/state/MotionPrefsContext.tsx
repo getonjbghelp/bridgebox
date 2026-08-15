@@ -61,7 +61,10 @@ const MotionPrefsContext = createContext<MotionPrefs | null>(null)
 
 export function MotionPrefsProvider({ children }: { children: ReactNode }) {
   const [animationsEnabled, setAnimationsEnabledState] = useState(true)
-  const [theme, setThemeState] = useState<'light' | 'dark'>('light')
+  // Matches UiConfig.theme's schema default (and index.html's boot-skeleton
+  // fallback) so this initial value never fights the hint the skeleton
+  // already painted before React took over.
+  const [theme, setThemeState] = useState<'light' | 'dark'>('dark')
   // Matches UiConfig.sidebar_collapsed's default, so the rail does not start
   // expanded and snap shut a moment later when get_config lands.
   const [sidebarCollapsed, setSidebarCollapsedState] = useState(true)

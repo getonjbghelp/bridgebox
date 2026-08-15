@@ -23,13 +23,16 @@ _PRERELEASE_RE = re.compile(r"(?:a|b|rc)\d+$")
 # The numeric components, in order. "0.1.0b1" -> ["0", "1", "0", "1"].
 _VERSION_PART = re.compile(r"\d+")
 _PYPROJECT_VERSION_RE = re.compile(r'^\s*version\s*=\s*"([^"]+)"', re.MULTILINE)
+_PYPROJECT_CHANNEL_RE = re.compile(r'^\s*channel\s*=\s*"([^"]*)"', re.MULTILINE)
 
 _FALLBACK = "0.0.0"
 
 
-def _from_pyproject() -> str | None:
-    """Walk up for backend/pyproject.toml. Running from a checkout - which is
-    what run.bat does - means importlib.metadata has nothing to find."""
+def _pyproject_text() -> str | None:
+    """backend/pyproject.toml's own text, wherever this run of BridgeBox
+    can find it. Frozen and source-checkout modes look in different places -
+    see the two branches - but everything downstream reads the same file
+    content either way, so version and channel parsing share this."""
     if getattr(sys, "frozen", False):
         # __file__ inside a frozen module is not a real path on disk -
         # PyInstaller bundles .py sources into its own archive, so the
@@ -39,19 +42,21 @@ def _from_pyproject() -> str | None:
         candidate = Path(sys._MEIPASS) / "pyproject.toml"  # type: ignore[attr-defined]
         if not candidate.exists():
             return None
-        match = _PYPROJECT_VERSION_RE.search(
-            candidate.read_text(encoding="utf-8", errors="replace")
-        )
-        return match.group(1) if match else None
+        return candidate.read_text(encoding="utf-8", errors="replace")
 
     for parent in Path(__file__).resolve().parents:
         candidate = parent / "pyproject.toml"
         if candidate.exists():
-            match = _PYPROJECT_VERSION_RE.search(
-                candidate.read_text(encoding="utf-8", errors="replace")
-            )
-            return match.group(1) if match else None
+            return candidate.read_text(encoding="utf-8", errors="replace")
     return None
+
+
+def _from_pyproject() -> str | None:
+    text = _pyproject_text()
+    if text is None:
+        return None
+    match = _PYPROJECT_VERSION_RE.search(text)
+    return match.group(1) if match else None
 
 
 def app_version() -> str:
@@ -93,13 +98,30 @@ def release_label(version_string: str | None = None) -> str:
 
 
 def display_version(version_string: str | None = None) -> str:
-    """What the user is shown: "0.1".
+    """What the user is shown: "0.1.1".
 
-    pyproject has to hold a PEP 440 version ("0.1.0b1") because packaging
-    tools read it, but that string is noise to a player - the beta-ness is
-    already said by the β badge, and the third component has never differed
-    from 0. So the label is the first two components and nothing else."""
+    pyproject has to hold a PEP 440 version ("0.1.1b1") because packaging
+    tools read it, but the pre-release suffix is noise to a player - the
+    beta-ness is already said by the β badge (release_label). Every numeric
+    component before that suffix is kept: dropping the patch number used to
+    be safe when it was always 0, but a bump like 0.1.0b1 -> 0.1.1b1 has to
+    actually show up somewhere, and this is the only string the UI reads
+    for that. _VERSION_PART.findall picks up the pre-release's own digit too
+    ("0.1.1b1" -> ["0","1","1","1"]) - parts[:3] is what keeps that 4th one
+    out."""
     parts = _VERSION_PART.findall(version_string or app_version())
     if not parts:
         return ""
-    return ".".join(parts[:2]) if len(parts) >= 2 else parts[0]
+    return ".".join(parts[:3])
+
+
+def build_channel() -> str:
+    """Empty for a normal checkout or build. A packaging step can leave a
+    `channel` line in pyproject.toml's `[tool.bridgebox]` table alongside
+    `version`, and if one is there this returns it verbatim - same
+    read path as app_version, just a different key."""
+    text = _pyproject_text()
+    if text is None:
+        return ""
+    match = _PYPROJECT_CHANNEL_RE.search(text)
+    return match.group(1) if match else ""

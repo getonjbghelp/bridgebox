@@ -44,7 +44,7 @@ from .runtime import BridgeRuntime
 from .runtime_core import RuntimeCore
 from .server.rooms import redact, rewrite_server_field
 from .tls.ca import CA_CERT_FILENAME
-from .version import app_version, display_version, release_label
+from .version import app_version, build_channel, display_version, release_label
 from .window_chrome import THEMED_NONE, apply_titlebar_theme
 from .zapret.strategies import (
     discover_strategies,
@@ -242,7 +242,7 @@ class Api:
             # could have moved. Hooked here rather than behind its own Api
             # method because every route that changes the theme already comes
             # through update_config - the Settings toggle, and the factory
-            # reset that puts it back to light.
+            # reset that puts it back to dark.
             self.apply_window_theme()
             return {"ok": True, "error": None, "config": new_config.model_dump()}
         except Exception as exc:
@@ -300,9 +300,13 @@ class Api:
                 # Non-empty only while this is a pre-release; the badge is
                 # rendered on that, and shows β rather than this text.
                 "label": release_label(version),
+                "channel": build_channel(),
             }
         except Exception as exc:
-            return {"ok": False, "error": describe_exception(exc), "version": "", "label": ""}
+            return {
+                "ok": False, "error": describe_exception(exc),
+                "version": "", "label": "", "channel": "",
+            }
 
     def get_autostart(self) -> dict:
         """What Windows actually has, not what config.yaml believes.
@@ -486,6 +490,13 @@ class Api:
     def save_hostlist(self, text: str) -> dict:
         try:
             hosts = write_hostlist(self._layout().hostlist_path, text)
+            # zapret/lists/*.txt is one of integrity.py's WATCHED_GLOBS - this
+            # write is the user's own, made through the app, not tampering, so
+            # re-recording the baseline is what stops it from raising the
+            # "your files were modified" banner on the very next launch. Same
+            # reasoning as the zapret-update path below.
+            integrity.write_manifest(self._project_root)
+            self._integrity = integrity.IntegrityReport(verified=True)
             return {"ok": True, "error": None, "count": len(hosts)}
         except Exception as exc:
             # Includes the ValueError naming the offending line number - that

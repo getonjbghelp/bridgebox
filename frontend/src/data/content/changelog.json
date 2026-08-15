@@ -1,5 +1,18 @@
 [
   {
+    "version": "0.1.1 (b1)",
+    "date": "2026-08-15",
+    "level": "minor",
+    "ru": {
+      "title": "Багфиксы",
+      "body": "Программа BridgeBox продолжает улучшаться с каждым днем за счет исправления ряда неточностей (или же багов). \nКстати, вот список того, что было исправлено и добавлено:\n - Исправлен дефект с хедером окна на Windows 10\n - Был добавлен раздел благодарностей в меню «Инфо»\n- Исправлена анимация попапов на экране Инфо\n- Улучшена система антифрода"
+    },
+    "en": {
+      "title": "Bugfixes",
+      "body": "BridgeBox continues to improve every day thanks to the correction of a number of inaccuracies (or bugs). \nBy the way, here’s a list of what has been fixed and added:\n - A defect with the window header on Windows 10 has been fixed\n - A thanks section has been added to the “Info” menu\n- The animation of pop‑ups on the Info screen has been fixed\n- The anti‑fraud system has been improved"
+    }
+  },
+  {
     "version": "0.1 (b1)",
     "date": "2026-08-14",
     "level": "major",

@@ -1,6 +1,8 @@
+import { AnimatePresence } from 'framer-motion'
 import { useEffect, useState } from 'react'
 import { BrandLogo } from '../components/BrandLogo'
 import { Modal } from '../components/Modal'
+import { PeopleCredits } from '../components/PeopleCredits'
 import { Section, Row } from '../components/Section'
 import { LINK_ICONS } from '../components/icons'
 import { ABOUT, aboutText, localeText, type AboutLink } from '../lib/content'
@@ -16,6 +18,8 @@ interface AppInfo {
   /** "b1" while pre-release, "" once a final version ships - same source
    *  BetaBadge reads, never duplicated here. */
   label: string
+  /** Empty for an ordinary checkout or build. */
+  channel: string
 }
 
 interface IntegrityStatus {
@@ -91,6 +95,12 @@ export function InfoScreen() {
           label={strings.info.licenseLabel}
           control={<span className="text-caption">{about.license.name}</span>}
         />
+        {info?.channel && (
+          <Row
+            label={strings.info.sourceLabel}
+            control={<span className="text-caption">{strings.info.sourcePublic}</span>}
+          />
+        )}
       </Section>
       <p className="text-caption bb-info__license-text">{renderRich(about.license.text)}</p>
 
@@ -136,21 +146,25 @@ export function InfoScreen() {
         </Section>
       )}
 
-      {openLink && (
-        <Modal title={localeText(openLink.popupTitle, locale)} onClose={() => setOpenLink(null)}>
-          <p className="text-body">{renderRich(localeText(openLink.popupText, locale))}</p>
-          {openLink.popupUrl && (
-            <a
-              className="bb-info__popup-link"
-              href={openLink.popupUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              {localeText(openLink.popupUrlLabel, locale) || openLink.popupUrl}
-            </a>
-          )}
-        </Modal>
-      )}
+      <PeopleCredits />
+
+      <AnimatePresence>
+        {openLink && (
+          <Modal title={localeText(openLink.popupTitle, locale)} onClose={() => setOpenLink(null)}>
+            <p className="text-body">{renderRich(localeText(openLink.popupText, locale))}</p>
+            {openLink.popupUrl && (
+              <a
+                className="bb-info__popup-link"
+                href={openLink.popupUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {localeText(openLink.popupUrlLabel, locale) || openLink.popupUrl}
+              </a>
+            )}
+          </Modal>
+        )}
+      </AnimatePresence>
     </div>
   )
 }

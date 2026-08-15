@@ -1,0 +1,19 @@
+{
+  "donators": [],
+  "bughunters": [],
+  "testers": [
+    {
+      "id": "p1xel",
+      "name": "p1xel",
+      "tested": {
+        "ru": "Работоспсобность программы на Windows 10.",
+        "en": "Program’s functionality on Windows 10."
+      },
+      "environment": "Windows 10",
+      "contribution": {
+        "ru": "Выявил самый первый баг (с дефектом хедера окна)",
+        "en": "He identified the very first bug (with a defect in the window header)."
+      }
+    }
+  ]
+}

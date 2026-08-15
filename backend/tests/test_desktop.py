@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from bridgebox import desktop
+from bridgebox import integrity
 from bridgebox.config import Config
 from bridgebox.log_buffer import LogBuffer
 from bridgebox.window_chrome import THEMED_FULL
@@ -1061,6 +1062,23 @@ def test_api_save_then_get_hostlist_round_trips(tmp_path: Path):
     assert api.get_hostlist()["text"] == "# hosts\necast.jackboxgames.com\njackbox.tv\n"
 
 
+def test_api_save_hostlist_re_records_the_integrity_baseline(tmp_path: Path):
+    """zapret/lists/*.txt is a watched path - saving through the app is not
+    tampering, so the next integrity check must not flag it (same rule the
+    zapret updater already follows)."""
+    path = _hostlist_path(tmp_path)
+    path.parent.mkdir(parents=True)
+    api = _make_api(tmp_path)
+    integrity.write_manifest(tmp_path)  # baseline taken before the edit
+
+    result = api.save_hostlist("ecast.jackboxgames.com\n")
+
+    assert result["ok"] is True
+    report = integrity.verify(tmp_path)
+    assert report.verified is True
+    assert api.integrity_status()["verified"] is True
+
+
 def test_api_save_hostlist_reports_the_offending_line_instead_of_raising(tmp_path: Path):
     path = _hostlist_path(tmp_path)
     path.parent.mkdir(parents=True)
@@ -1279,14 +1297,14 @@ def test_a_factory_reset_puts_the_title_bar_back_too(tmp_path: Path, monkeypatch
     )
 
     config = Config()
-    config.ui.theme = "dark"
+    config.ui.theme = "light"
     api = _make_api(tmp_path, config=config)
     api.attach_window(object())
 
     api.update_config({"ui": None})  # null-unset: pydantic refills the default
 
-    assert api._config.ui.theme == "light"
-    assert applied == ["light"]
+    assert api._config.ui.theme == "dark"
+    assert applied == ["dark"]
 
 
 def test_a_failing_title_bar_repaint_never_fails_the_config_write(tmp_path: Path, monkeypatch):

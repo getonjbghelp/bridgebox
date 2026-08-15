@@ -130,7 +130,14 @@ class LoggingConfig(BaseModel):
 
 
 class UiConfig(BaseModel):
-    theme: Literal["light", "dark"] = "light"
+    # SetupWizard.tsx forces 'dark' on every first run regardless of this
+    # value ("a first run is dark, per the wizard's own default") - matching
+    # that here means the native title bar's very first paint (window.shown,
+    # driven straight off this config, no round trip) already agrees with it
+    # instead of racing the async update_config() call that used to correct
+    # it a beat later, which is what produced a white title bar over dark
+    # content for that first second.
+    theme: Literal["light", "dark"] = "dark"
     animations_enabled: bool = True
     # "system" resolves on the frontend from navigator.language, once, and the
     # result is what's actually shown - this field only remembers the user's

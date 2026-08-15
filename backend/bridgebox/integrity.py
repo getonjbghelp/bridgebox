@@ -25,6 +25,7 @@ baseline.json already reflects exactly what a tamperer would have to change.
 """
 from __future__ import annotations
 
+import ctypes
 import hashlib
 import json
 import logging
@@ -182,6 +183,26 @@ def read_manifest(root: Path) -> dict | None:
     return data
 
 
+# FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM. Both, not just hidden: File
+# Explorer's default view needs two separate settings changed ("Show hidden
+# files" AND "Hide protected operating system files" turned off) before
+# baseline.json turns up at all, instead of one.
+_HIDE_ATTRS = 0x2 | 0x4
+
+
+def _hide(path: Path) -> None:
+    """Best-effort only, Windows-only, and only worth doing at all in a
+    portable build - see write_manifest. A source checkout wants this file
+    visible; a developer poking through their own repo is not the reader
+    this hides it from."""
+    if sys.platform != "win32":
+        return
+    try:
+        ctypes.windll.kernel32.SetFileAttributesW(str(path), _HIDE_ATTRS)  # type: ignore[attr-defined]
+    except OSError as exc:
+        logger.debug("could not mark %s hidden: %s", path, exc)
+
+
 def write_manifest(root: Path) -> bool:
     """Record the current state as the baseline. Never raises."""
     root = Path(root)
@@ -190,10 +211,16 @@ def write_manifest(root: Path) -> bool:
         path = manifest_path(root)
         # Same write-then-rename every other file in this app uses, so a crash
         # mid-write cannot leave a truncated manifest that reads as "everything
-        # changed".
+        # changed". Compact, not pretty-printed: this is machine-read and
+        # machine-written, and an indented file with one hash per line is an
+        # open invitation to hand-edit a single line to match a tampered file.
         tmp = path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(manifest, ensure_ascii=False, indent=1), encoding="utf-8")
+        tmp.write_text(json.dumps(manifest, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
         tmp.replace(path)
+        # The rename above already dropped whatever attributes .tmp had, so
+        # this has to run on the FINAL path, after replace() - not before.
+        if getattr(sys, "frozen", False):
+            _hide(path)
     except OSError as exc:
         logger.error("could not write the integrity baseline: %s", exc)
         return False

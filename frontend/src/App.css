@@ -41,6 +41,25 @@
   animation: bb-screen-in var(--dur-slow) var(--ease-out);
 }
 
+/* Boot-time warm-up - see App.tsx for the measurement this exists for.
+   Every screen that is NOT the one on show gets laid out and painted once,
+   pinned out of the way and fully transparent, so its first real appearance
+   is not also its first layout. Nothing here can disturb the visible page:
+   absolute takes them out of flow, the viewport-sized box plus overflow
+   keeps them from growing the document, and pointer-events/aria-hidden keep
+   them away from the pointer and the accessibility tree. */
+.bb-app-shell[data-prewarm='true'] .bb-app__screen:not([data-active='true']) {
+  display: block;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 720px;
+  height: 100%;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
 @keyframes bb-screen-in {
   from {
     opacity: 0;

@@ -328,6 +328,21 @@
     "integrityChanged": "Изменено файлов: {count}",
     "integrityChecking": "Проверяем…",
     "licenseLabel": "Лицензия",
-    "linksTitle": "Ссылки"
+    "sourceLabel": "Источник",
+    "sourcePublic": "Официальный репозиторий GitHub",
+    "linksTitle": "Ссылки",
+    "peopleTitle": "Благодарности",
+    "peopleTabDonators": "Донатеры",
+    "peopleTabBughunters": "Багхантеры",
+    "peopleTabTesters": "Тестеры",
+    "peopleDonatorDate": "Дата",
+    "peopleDonatorPlatform": "Платформа",
+    "peopleDonatorAmount": "Сумма",
+    "peopleDonatorComment": "Комментарий",
+    "peopleBughunterBug": "Найденный баг",
+    "peopleBughunterLink": "Ссылка на issue/коммит",
+    "peopleTesterTested": "Что тестировал(а)",
+    "peopleTesterEnvironment": "Конфигурация",
+    "peopleTesterContribution": "Ключевой вклад"
   }
 }

@@ -1,5 +1,6 @@
 import changelogData from '../data/content/changelog.json'
 import aboutData from '../data/content/about.json'
+import peopleData from '../data/content/people.json'
 import type { Locale } from '../state/MotionPrefsContext'
 
 /** How important a release was - decides the changelog badge's colour. */
@@ -76,7 +77,59 @@ export function aboutText(locale: Locale): AboutLocaleContent {
 }
 
 /** Same RU-fallback rule as changelogText/aboutText, for the per-locale
- * records inside an AboutLink (label, popupTitle, popupText, popupUrlLabel). */
+ * records inside an AboutLink (label, popupTitle, popupText, popupUrlLabel)
+ * and a Donator/BugHunter/Tester's locale fields. `||` rather than `??`
+ * deliberately - a locale field that exists but is still an empty string
+ * (a bulk-imported PEOPLE entry that has not been translated to English
+ * yet, see tools/build_content.py) must fall back exactly the same as a
+ * missing key would, or an untranslated entry renders blank in English
+ * instead of showing the Russian that is actually there. */
 export function localeText(record: Record<Locale, string> | undefined, locale: Locale): string {
-  return record?.[locale] ?? record?.ru ?? ''
+  return record?.[locale] || record?.ru || ''
 }
+
+/**
+ * The "Спасибо" people module: donators, bug hunters, and testers - distinct
+ * from CREDITS in data/credits.ts, which attributes the open-source projects
+ * BridgeBox is built on, not the people who supported this one. Written by
+ * tools/build_content.py, same as CHANGELOG/ABOUT above.
+ */
+interface PersonBase {
+  id: string
+  name: string
+  /** Optional avatar image URL. Absent renders the pill with initials only. */
+  avatar?: string
+}
+
+export interface Donator extends PersonBase {
+  /** ISO date, displayed as-is - not translated. */
+  date: string
+  /** Free text: "Donatty", "Boosty", "USDT", ... */
+  platform: string
+  /** Free text tier/amount label, e.g. "500 ₽" - optional since some donors
+   * prefer not to disclose the amount. */
+  amount?: string
+  comment?: Record<Locale, string>
+}
+
+export interface BugHunter extends PersonBase {
+  bugTitle: Record<Locale, string>
+  bugDescription: Record<Locale, string>
+  /** Link to the GitHub Issue or commit that credits them, if any. */
+  link?: string
+}
+
+export interface Tester extends PersonBase {
+  tested: Record<Locale, string>
+  /** Free text: OS/build/config, e.g. "Windows 10 22H2". */
+  environment: string
+  contribution: Record<Locale, string>
+}
+
+export interface PeopleData {
+  donators: Donator[]
+  bughunters: BugHunter[]
+  testers: Tester[]
+}
+
+export const PEOPLE = peopleData as PeopleData
