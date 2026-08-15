@@ -1,5 +1,5 @@
 import { AnimatePresence } from 'framer-motion'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { BrandLogo } from '../components/BrandLogo'
 import { Modal } from '../components/Modal'
 import { PeopleCredits } from '../components/PeopleCredits'
@@ -42,34 +42,12 @@ interface IntegrityStatus {
  * (BetaBadge's version, IntegrityBanner's check) rather than a second source
  * of truth for either - see lib/content.ts and Api.app_info/integrity_status.
  */
-export function InfoScreen({ active }: { active: boolean }) {
+export function InfoScreen() {
   const strings = useStrings()
   const { locale } = useMotionPrefs()
   const [info, setInfo] = useState<AppInfo | null>(null)
   const [integrity, setIntegrity] = useState<IntegrityStatus | null>(null)
   const [openLink, setOpenLink] = useState<AboutLink | null>(null)
-  // The Links row (custom-SVG icons via dangerouslySetInnerHTML) and
-  // PeopleCredits are the priciest things this screen renders, and neither
-  // is needed for the entrance to read as smooth - only the header/logo/
-  // version block is. All four screens mount together at boot (App.tsx),
-  // hidden behind display:none, so a plain mount-time effect fires at boot
-  // too - long before the user ever navigates here - and defers nothing
-  // useful. `active` is what actually marks the moment this screen goes
-  // display:none -> block, which is also the FIRST time the browser lays
-  // this subtree out at all (a display:none element has no layout to warm
-  // up from). Rendering the heavy parts one frame after THAT, once and
-  // never again (the ref), lets .bb-app__screen's entrance animation get a
-  // cheap first frame instead of racing a layout pass sized for the whole
-  // screen - subsequent visits are already warm, per the fix's own
-  // measurement (see PR notes), so there is nothing left to defer by then.
-  const [showExtras, setShowExtras] = useState(false)
-  const deferredOnce = useRef(false)
-  useEffect(() => {
-    if (!active || deferredOnce.current) return
-    deferredOnce.current = true
-    const id = requestAnimationFrame(() => setShowExtras(true))
-    return () => cancelAnimationFrame(id)
-  }, [active])
 
   useEffect(() => {
     waitForBridgeReady().then(() => {
@@ -128,7 +106,7 @@ export function InfoScreen({ active }: { active: boolean }) {
 
       {/* Nothing to show until build_content.py has written at least one link -
           an empty "Ссылки" heading over a blank box is worse than no section. */}
-      {showExtras && ABOUT.links.length > 0 && (
+      {ABOUT.links.length > 0 && (
         <Section title={strings.info.linksTitle}>
           <div className="bb-info__links">
             {ABOUT.links.map((link) => {
@@ -168,7 +146,7 @@ export function InfoScreen({ active }: { active: boolean }) {
         </Section>
       )}
 
-      {showExtras && <PeopleCredits />}
+      <PeopleCredits />
 
       <AnimatePresence>
         {openLink && (

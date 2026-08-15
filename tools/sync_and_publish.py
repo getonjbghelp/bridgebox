@@ -27,7 +27,7 @@ PUBLIC_DIR = REPO_ROOT / "githubpubliccode"
 EXCLUDE_DIRS = [
     ".venv", "node_modules", "__pycache__", ".pytest_cache", "dist", "build",
     "logs", "certs", "temp", "graphify-out", ".claude", ".impeccable", ".git",
-    "githubpubliccode", "docs", "*.egg-info",
+    "githubpubliccode", "docs", "*.egg-info", "handoffs", "problems-BB",
 ]
 EXCLUDE_FILES = [
     "config.yaml", "baseline.json", "HANDOFF-*.md",
