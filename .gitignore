@@ -26,3 +26,8 @@ baseline.json
 # running the script, never something to commit).
 /build/
 /dist/
+
+# A full copy of this same tree, for browsing/publishing as the public
+# GitHub repo content - regenerated on demand, never nested into its own
+# source (committing it would duplicate the entire repo inside itself).
+/githubpubliccode/

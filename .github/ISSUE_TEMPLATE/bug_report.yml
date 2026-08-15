@@ -1,5 +1,5 @@
-name: "Баг-репорт / Bug report"
-description: "Сообщить о проблеме c BridgeBox / Report a problem with BridgeBox"
+name: "🐛 Баг-репорт / Bug report"
+description: "Сообщить о проблеме в BridgeBox / Report a problem with BridgeBox"
 title: "[Bug]: "
 labels: ["bug", "needs triage"]
 body:

@@ -1,4 +1,4 @@
-name: "Идея / Feature request"
+name: "✨ Идея / Feature request"
 description: "Предложить улучшение или новую функцию / Suggest an improvement or a new feature"
 title: "[Feature]: "
 labels: ["enhancement"]
@@ -19,9 +19,9 @@ body:
       label: "Какую проблему это решает? / What problem does this solve?"
       description: >
         Опишите ситуацию, а не сразу решение — иногда для одной проблемы находится
-        решение попроще того, что предлагаете вы. Имейте ввиду, не гарантировано, что ваша идея попадёт в программу / Describe the situation, not
+        решение попроще того, что предлагаете вы. / Describe the situation, not
         just the fix - sometimes a simpler solution than the one you have in mind
-        turns out to fit better. Please note that it is not guaranteed that your idea will be included in the program.
+        turns out to fit better.
     validations:
       required: true
 

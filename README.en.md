@@ -56,6 +56,7 @@ rented server.
 - [For developers](#for-developers)
 - [Where everything lives](#where-everything-lives)
 - [Security and privacy](#security-and-privacy)
+- [Support the project](#support-the-project)
 - [License](#license)
 
 ---
@@ -569,6 +570,22 @@ rebuilds it on the next launch by itself.
 - **The portable build writes nothing outside its own folder.** No `%APPDATA%`, no
   registry (aside from the optional Task Scheduler entry, and only if you turned
   autostart on yourself) - see [Download](#download).
+
+---
+
+## Support the project
+
+BridgeBox is free and stays that way - the license flat out forbids selling it or
+bundling it into a paid product. If you want to support development with money, there
+are three options (same links as the program's own Info screen):
+
+- **[Donatty](https://donatty.com/bridgebox)** - for Russia.
+- **USDT**: `ERC20` `0xda7a456c3a48d1b607fc17b8c085c049a7221693`, `TRC20`
+  `TLWSMZqmsak8xnr9qTgQVmRiWCzE6mQGY4`.
+- **Bitcoin**: `18qBmbhKyDNrrrwsMcyq2niZ8dKK9MEJuL`.
+
+Donators, bug hunters, and testers who've contributed show up in the "Thanks" section
+on the Info screen, along with what each of them found or checked.
 
 ---
 
