@@ -32,6 +32,9 @@ EXCLUDE_DIRS = [
 EXCLUDE_FILES = [
     "config.yaml", "baseline.json", "HANDOFF-*.md",
     "ОБЪЯСНЕНИЕ_ФАЙЛОВ.txt", "cmd.exe",
+    # Chat moderation notes, not project source - no reason a GitHub visitor
+    # needs these.
+    "TELEGRAM_RULES.md", "TELEGRAM_RULES.txt",
     # Maintained directly in the public repo from here on - see its own copy.
     "build_portable.py",
 ]
