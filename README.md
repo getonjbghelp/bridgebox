@@ -514,7 +514,7 @@ python tools/build_portable.py
 
 ---
 
-## Где что лежит (не Portable версия)
+## Где что лежит
 
 ```
 BridgeBoxDevVersion/
