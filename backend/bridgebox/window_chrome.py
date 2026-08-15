@@ -228,9 +228,16 @@ def apply_titlebar_theme(window, theme: str, *, dwmapi=None, version=None) -> st
         )
         dark_ok = _set_attribute(api, hwnd, other, dark)
 
-    caption_ok = _set_attribute(api, hwnd, DWMWA_CAPTION_COLOR, colorref(palette.caption))
-    _set_attribute(api, hwnd, DWMWA_TEXT_COLOR, colorref(palette.text))
-    _set_attribute(api, hwnd, DWMWA_BORDER_COLOR, colorref(palette.border))
+    # DWMWA_CAPTION_COLOR/TEXT_COLOR/BORDER_COLOR are Windows 11 (22000+)
+    # attribute numbers; _set_attribute already treats Windows 10 rejecting
+    # them as a harmless failure (that is the THEMED_DARK_MODE path below),
+    # but there is no reason to hand undefined attribute numbers to dwmapi at
+    # all on a Windows this can never work on - skip the attempt outright.
+    caption_ok = False
+    if version is not None and version.is_windows_11:
+        caption_ok = _set_attribute(api, hwnd, DWMWA_CAPTION_COLOR, colorref(palette.caption))
+        _set_attribute(api, hwnd, DWMWA_TEXT_COLOR, colorref(palette.text))
+        _set_attribute(api, hwnd, DWMWA_BORDER_COLOR, colorref(palette.border))
 
     # Windows 10 will not redraw the caption on its own - see _repaint_frame.
     if dark_ok or caption_ok:

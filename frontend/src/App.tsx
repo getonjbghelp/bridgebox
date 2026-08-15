@@ -87,7 +87,7 @@ function App() {
           <LogsScreen active={screen === 'logs'} />
         </div>
         <div className="bb-app__screen" data-active={screen === 'info'}>
-          <InfoScreen />
+          <InfoScreen active={screen === 'info'} />
         </div>
       </main>
       </div>

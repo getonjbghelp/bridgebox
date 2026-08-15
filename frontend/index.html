@@ -19,12 +19,12 @@
       // overwrites this the instant get_config answers, and a mismatch
       // self-corrects within a frame. This is a render hint so the first paint
       // is not white on a machine set to dark; the very first launch of all has
-      // no hint and gets "light", which is the schema default anyway.
+      // no hint yet and gets "dark", matching UiConfig.theme's schema default
+      // and what the setup wizard forces on a first run anyway - painting
+      // "light" here for that one launch would just be a flash to correct.
       try {
         var hint = localStorage.getItem('bb-theme-hint')
-        if (hint === 'dark' || hint === 'light') {
-          document.documentElement.dataset.theme = hint
-        }
+        document.documentElement.dataset.theme = hint === 'light' ? 'light' : 'dark'
       } catch (e) {
         /* storage disabled - the default is correct often enough */
       }

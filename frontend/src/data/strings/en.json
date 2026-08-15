@@ -328,6 +328,21 @@
     "integrityChanged": "Files changed: {count}",
     "integrityChecking": "Checking…",
     "licenseLabel": "License",
-    "linksTitle": "Links"
+    "sourceLabel": "Source",
+    "sourcePublic": "Official GitHub repository",
+    "linksTitle": "Links",
+    "peopleTitle": "Thanks",
+    "peopleTabDonators": "Donators",
+    "peopleTabBughunters": "Bug hunters",
+    "peopleTabTesters": "Testers",
+    "peopleDonatorDate": "Date",
+    "peopleDonatorPlatform": "Platform",
+    "peopleDonatorAmount": "Amount",
+    "peopleDonatorComment": "Comment",
+    "peopleBughunterBug": "Bug found",
+    "peopleBughunterLink": "Issue/commit link",
+    "peopleTesterTested": "What they tested",
+    "peopleTesterEnvironment": "Environment",
+    "peopleTesterContribution": "Key contribution"
   }
 }

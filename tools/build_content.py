@@ -30,12 +30,14 @@ FRONTEND_SRC = REPO_ROOT / "frontend" / "src"
 CONTENT_DIR = FRONTEND_SRC / "data" / "content"
 CHANGELOG_PATH = CONTENT_DIR / "changelog.json"
 ABOUT_PATH = CONTENT_DIR / "about.json"
+PEOPLE_PATH = CONTENT_DIR / "people.json"
 ICONS_PATH = FRONTEND_SRC / "components" / "icons.tsx"
 LOGO_PATH = FRONTEND_SRC / "components" / "BrandLogo.tsx"
 PYPROJECT_PATH = REPO_ROOT / "backend" / "pyproject.toml"
 
 LOCALES = ("ru", "en")
 LEVELS = ("minor", "major", "critical")
+PEOPLE_CATEGORIES = ("donators", "bughunters", "testers")
 
 _PYPROJECT_VERSION_RE = re.compile(r'^\s*version\s*=\s*"([^"]+)"', re.MULTILINE)
 # Same two patterns backend/bridgebox/version.py derives the Beta badge's
@@ -99,7 +101,13 @@ def read_wordmark() -> str:
 def load_content() -> dict:
     changelog = json.loads(CHANGELOG_PATH.read_text(encoding="utf-8"))
     about = json.loads(ABOUT_PATH.read_text(encoding="utf-8"))
-    return {"changelog": changelog, "about": about}
+    if PEOPLE_PATH.exists():
+        people = json.loads(PEOPLE_PATH.read_text(encoding="utf-8"))
+    else:
+        # A checkout from before this file existed - start empty rather than
+        # making the whole editor refuse to run over one missing category.
+        people = {category: [] for category in PEOPLE_CATEGORIES}
+    return {"changelog": changelog, "about": about, "people": people}
 
 
 def build_meta() -> dict:
@@ -249,6 +257,106 @@ def validate_about(data: object) -> dict:
     return data
 
 
+def _require_text(value: object, what: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{what} не может быть пустым")
+    return value.strip()
+
+
+# Which fields each category needs beyond id/name/avatar, and how to check
+# them - a table rather than three near-identical if-branches, so a new
+# required field is one line here instead of one in each of three places.
+_PEOPLE_SCHEMA: dict[str, list[tuple[str, str, bool]]] = {
+    # (field, kind, required) - kind is "text", "locale", or "url"
+    "donators": [
+        ("date", "date", True),
+        ("platform", "text", True),
+        ("amount", "text", False),
+        ("comment", "locale", False),
+    ],
+    "bughunters": [
+        ("bugTitle", "locale", True),
+        ("bugDescription", "locale", True),
+        ("link", "url", False),
+    ],
+    "testers": [
+        ("tested", "locale", True),
+        ("environment", "text", True),
+        ("contribution", "locale", True),
+    ],
+}
+
+
+def validate_people(data: object) -> dict:
+    if not isinstance(data, dict):
+        raise ValueError("people должен быть объектом")
+
+    result: dict[str, list[dict]] = {}
+    for category in PEOPLE_CATEGORIES:
+        entries = data.get(category, [])
+        if not isinstance(entries, list):
+            raise ValueError(f"{category} должен быть списком")
+        seen_ids: set[str] = set()
+        validated: list[dict] = []
+        for i, entry in enumerate(entries):
+            what = f"{category}[{i + 1}]"
+            if not isinstance(entry, dict):
+                raise ValueError(f"{what}: должен быть объектом")
+            entry_id = entry.get("id")
+            if not isinstance(entry_id, str) or not entry_id.strip():
+                raise ValueError(f"{what}: id не может быть пустым")
+            if entry_id in seen_ids:
+                raise ValueError(f"{category}: id {entry_id!r} повторяется")
+            seen_ids.add(entry_id)
+            name = _require_text(entry.get("name"), f"{what}: name")
+
+            cleaned: dict = {"id": entry_id.strip(), "name": name}
+            avatar = entry.get("avatar")
+            if avatar:
+                if not _is_valid_url(avatar):
+                    raise ValueError(f"{what}: avatar должен быть http(s)://")
+                cleaned["avatar"] = avatar
+
+            for field, kind, required in _PEOPLE_SCHEMA[category]:
+                value = entry.get(field)
+                if kind == "text":
+                    if required:
+                        cleaned[field] = _require_text(value, f"{what}: {field}")
+                    elif value:
+                        cleaned[field] = str(value).strip()
+                elif kind == "date":
+                    text = _require_text(value, f"{what}: {field}")
+                    try:
+                        date.fromisoformat(text)
+                    except ValueError:
+                        raise ValueError(f"{what}: {field} {text!r} не в формате ГГГГ-ММ-ДД") from None
+                    cleaned[field] = text
+                elif kind == "url":
+                    if value:
+                        if not _is_valid_url(value):
+                            raise ValueError(f"{what}: {field} должен быть http(s)://")
+                        cleaned[field] = value
+                elif kind == "locale":
+                    # RU is the one locale this ever requires, matching the
+                    # rest of the content pipeline (aboutText/changelogText's
+                    # "a translation not written yet reads as Russian rather
+                    # than blank") - a bulk import only ever fills RU (see
+                    # the JS import handler), so requiring EN too would make
+                    # every bulk-imported row unsavable until hand-translated.
+                    ru_text = value.get("ru", "").strip() if isinstance(value, dict) else ""
+                    if required and not ru_text:
+                        raise ValueError(f"{what}: {field}.ru не может быть пустым")
+                    if ru_text:
+                        en_value = value.get("en", "") if isinstance(value, dict) else ""
+                        cleaned[field] = {
+                            "ru": ru_text,
+                            "en": en_value.strip() if isinstance(en_value, str) else "",
+                        }
+            validated.append(cleaned)
+        result[category] = validated
+    return result
+
+
 def _require_locale_dict(value: object, what: str) -> None:
     if not isinstance(value, dict):
         raise ValueError(f"{what} обязателен")
@@ -271,6 +379,11 @@ def save_changelog(entries: object) -> None:
 def save_about(data: object) -> None:
     validated = validate_about(data)
     _atomic_write(ABOUT_PATH, validated)
+
+
+def save_people(data: object) -> None:
+    validated = validate_people(data)
+    _atomic_write(PEOPLE_PATH, validated)
 
 
 def render_page() -> str:
@@ -333,6 +446,22 @@ PAGE_TEMPLATE = r"""<!doctype html>
   }
   .tab:hover { color: var(--text); }
   .tab.active { background: var(--surface); color: var(--accent); box-shadow: 0 1px 2px rgb(15 23 42 / 8%); }
+  /* Same look as .tab/.tabs, separate class: the people panel's category
+     switcher must not be found by the outer header-tab click handler, which
+     assumes every ".tab" it sees has a "panel" it can toggle. */
+  .subtabs { display: flex; gap: 6px; background: var(--sunken); padding: 4px; border-radius: 12px; margin-bottom: 20px; }
+  .subtab {
+    font: inherit; font-size: 13.5px; font-weight: 600; padding: 8px 18px; border-radius: 9px;
+    border: none; cursor: pointer; background: transparent; color: var(--text-2);
+    transition: background .15s ease, color .15s ease;
+  }
+  .subtab:hover { color: var(--text); }
+  .subtab.active { background: var(--surface); color: var(--accent); box-shadow: 0 1px 2px rgb(15 23 42 / 8%); }
+  .subpanel { display: none; }
+  .subpanel.active { display: block; }
+  details.bulk-import { margin-bottom: 20px; }
+  details.bulk-import > summary { cursor: pointer; font-weight: 600; font-size: 13.5px; color: var(--text-2); padding: 4px 0; }
+  details.bulk-import textarea { margin-top: 10px; min-height: 110px; font: 13px/1.5 ui-monospace, monospace; }
   #status { margin-left: auto; font-size: 13px; font-weight: 600; color: var(--text-3); transition: color .15s ease; }
   #status.ok { color: var(--success); }
   #status.err { color: var(--danger); }
@@ -427,6 +556,7 @@ PAGE_TEMPLATE = r"""<!doctype html>
   <div class="tabs">
     <button class="tab active" data-panel="changelog">История версий</button>
     <button class="tab" data-panel="about">О программе</button>
+    <button class="tab" data-panel="people">Благодарности</button>
   </div>
   <span id="status"></span>
 </header>
@@ -462,6 +592,51 @@ PAGE_TEMPLATE = r"""<!doctype html>
     <button class="add-card" id="add-link" type="button">+ Добавить ссылку</button>
     <button class="primary save-bar" id="save-about">Сохранить «О программе»</button>
     <p class="problem" id="about-problem" hidden></p>
+  </section>
+
+  <section id="panel-people" class="panel">
+    <p class="hint">Донатеры, багхантеры и тестеры, показанные на экране «Инфо». Каждая карточка — один человек; массовый импорт ниже добавляет карточки из вставленной таблицы, а не заменяет уже существующие.</p>
+    <div class="subtabs" id="people-subtabs">
+      <button class="subtab active" data-sub="donators">Донатеры</button>
+      <button class="subtab" data-sub="bughunters">Багхантеры</button>
+      <button class="subtab" data-sub="testers">Тестеры</button>
+    </div>
+
+    <div class="subpanel active" data-sub-panel="donators">
+      <details class="bulk-import">
+        <summary>Массовый импорт из таблицы (TSV/CSV)</summary>
+        <p class="subtle">Одна строка — один человек. Столбцы: Ник; Дата (ГГГГ-ММ-ДД); Платформа; Сумма (необязательно); Комментарий на русском (необязательно). Разделитель — таб (при вставке из таблицы) или точка с запятой.</p>
+        <textarea id="bulk-donators" placeholder="Ник;2026-01-01;Donatty;500 ₽;Спасибо за донат!"></textarea>
+        <button class="ghost" id="import-donators" type="button" style="margin-top:10px">Импортировать строки</button>
+      </details>
+      <div id="list-donators"></div>
+      <button class="add-card" id="add-donators" type="button">+ Добавить донатера</button>
+    </div>
+
+    <div class="subpanel" data-sub-panel="bughunters">
+      <details class="bulk-import">
+        <summary>Массовый импорт из таблицы (TSV/CSV)</summary>
+        <p class="subtle">Столбцы: Ник; Заголовок бага на русском; Описание на русском; Ссылка на issue/коммит (необязательно).</p>
+        <textarea id="bulk-bughunters" placeholder="Ник;Белая шапка окна на Windows 10;Нашёл рассинхронизацию темы;https://github.com/.../issues/1"></textarea>
+        <button class="ghost" id="import-bughunters" type="button" style="margin-top:10px">Импортировать строки</button>
+      </details>
+      <div id="list-bughunters"></div>
+      <button class="add-card" id="add-bughunters" type="button">+ Добавить багхантера</button>
+    </div>
+
+    <div class="subpanel" data-sub-panel="testers">
+      <details class="bulk-import">
+        <summary>Массовый импорт из таблицы (TSV/CSV)</summary>
+        <p class="subtle">Столбцы: Ник; Что тестировал(а) на русском; Конфигурация/ОС; Ключевой вклад на русском.</p>
+        <textarea id="bulk-testers" placeholder="Ник;Мастер настройки;Windows 10 22H2;Отловил баг с шапкой окна"></textarea>
+        <button class="ghost" id="import-testers" type="button" style="margin-top:10px">Импортировать строки</button>
+      </details>
+      <div id="list-testers"></div>
+      <button class="add-card" id="add-testers" type="button">+ Добавить тестера</button>
+    </div>
+
+    <button class="primary save-bar" id="save-people">Сохранить благодарности</button>
+    <p class="problem" id="people-problem" hidden></p>
   </section>
 </main>
 <script>
@@ -780,6 +955,152 @@ document.getElementById('save-about').addEventListener('click', async () => {
   }
 });
 
+// ---- people (donators / bughunters / testers) ------------------------
+
+// Mirrors _PEOPLE_SCHEMA in build_content.py - keep the two in sync by hand
+// if a field is ever added, same as icons.tsx/known_icons() elsewhere is
+// the one thing here that ISN'T hand-synced.
+const PEOPLE_SCHEMA = {
+  donators: [
+    ['date', 'text', true, 'Дата (ГГГГ-ММ-ДД)'],
+    ['platform', 'text', true, 'Платформа'],
+    ['amount', 'text', false, 'Сумма'],
+    ['comment', 'locale', false, 'Комментарий'],
+  ],
+  bughunters: [
+    ['bugTitle', 'locale', true, 'Заголовок бага'],
+    ['bugDescription', 'locale', true, 'Описание бага'],
+    ['link', 'text', false, 'Ссылка на issue/коммит'],
+  ],
+  testers: [
+    ['tested', 'locale', true, 'Что тестировал(а)'],
+    ['environment', 'text', true, 'Конфигурация/ОС'],
+    ['contribution', 'locale', true, 'Ключевой вклад'],
+  ],
+};
+const PEOPLE_CATEGORIES = Object.keys(PEOPLE_SCHEMA);
+
+document.querySelectorAll('#people-subtabs .subtab').forEach((tab) => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('#people-subtabs .subtab').forEach((t) => t.classList.remove('active'));
+    document.querySelectorAll('.subpanel').forEach((p) => p.classList.remove('active'));
+    tab.classList.add('active');
+    document.querySelector(`.subpanel[data-sub-panel="${tab.dataset.sub}"]`).classList.add('active');
+  });
+});
+
+function personCard(category, person) {
+  const schema = PEOPLE_SCHEMA[category];
+  const card = document.createElement('div');
+  card.className = 'card';
+  let fieldsHtml = '';
+  for (const [field, kind, required, label] of schema) {
+    if (kind === 'text') {
+      fieldsHtml += `<div class="row"><label>${label}${required ? '' : ' (опц.)'}</label><input class="f-${field}" value="${esc(person[field] || '')}"></div>`;
+    } else {
+      const val = person[field] || {};
+      fieldsHtml += `<div class="row-pair" style="margin-top:16px">
+        <div><span class="lang-tag">RU — ${label}</span><textarea class="f-${field}-ru">${esc(val.ru || '')}</textarea></div>
+        <div><span class="lang-tag">EN — ${label}</span><textarea class="f-${field}-en">${esc(val.en || '')}</textarea></div>
+      </div>`;
+    }
+  }
+  card.innerHTML = `
+    <div class="card-head">
+      <input class="f-id" placeholder="id" style="max-width:160px" value="${esc(person.id || '')}">
+      <button class="ghost remove-person" type="button">Удалить</button>
+    </div>
+    <div class="row-pair">
+      <div><span class="lang-tag">Имя / ник</span><input class="f-name" value="${esc(person.name || '')}"></div>
+      <div><span class="lang-tag">Аватар — URL (опц.)</span><input class="f-avatar" value="${esc(person.avatar || '')}"></div>
+    </div>
+    ${fieldsHtml}
+  `;
+  card.querySelector('.remove-person').addEventListener('click', () => card.remove());
+  return card;
+}
+
+function collectPerson(category, card) {
+  const person = {
+    id: card.querySelector('.f-id').value.trim(),
+    name: card.querySelector('.f-name').value.trim(),
+  };
+  const avatar = card.querySelector('.f-avatar').value.trim();
+  if (avatar) person.avatar = avatar;
+  for (const [field, kind] of PEOPLE_SCHEMA[category]) {
+    if (kind === 'text') {
+      const value = card.querySelector(`.f-${field}`).value.trim();
+      if (value) person[field] = value;
+    } else {
+      const ru = card.querySelector(`.f-${field}-ru`).value.trim();
+      const en = card.querySelector(`.f-${field}-en`).value.trim();
+      if (ru || en) person[field] = { ru, en };
+    }
+  }
+  return person;
+}
+
+function freshId() {
+  return 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+}
+
+for (const category of PEOPLE_CATEGORIES) {
+  const listEl = document.getElementById(`list-${category}`);
+  (CONTENT.people[category] || []).forEach((person) => listEl.appendChild(personCard(category, person)));
+
+  document.getElementById(`add-${category}`).addEventListener('click', () => {
+    listEl.appendChild(personCard(category, { id: freshId() }));
+  });
+
+  document.getElementById(`import-${category}`).addEventListener('click', () => {
+    const textarea = document.getElementById(`bulk-${category}`);
+    const lines = textarea.value.split('\n').map((line) => line.trim()).filter(Boolean);
+    const schema = PEOPLE_SCHEMA[category];
+    let added = 0;
+    for (const line of lines) {
+      const cols = (line.includes('\t') ? line.split('\t') : line.split(';')).map((c) => c.trim());
+      if (!cols[0]) continue;
+      const person = { id: freshId(), name: cols[0] };
+      schema.forEach(([field, kind], i) => {
+        const raw = (cols[i + 1] || '').trim();
+        if (!raw) return;
+        person[field] = kind === 'locale' ? { ru: raw, en: '' } : raw;
+      });
+      listEl.appendChild(personCard(category, person));
+      added++;
+    }
+    textarea.value = '';
+    setStatus(added ? `Импортировано строк: ${added} (не забудьте сохранить)` : 'Не найдено ни одной строки', added ? 'ok' : 'err');
+  });
+}
+
+document.getElementById('save-people').addEventListener('click', async () => {
+  const problemEl = document.getElementById('people-problem');
+  problemEl.hidden = true;
+  setStatus('Сохраняем…');
+  try {
+    const data = {};
+    for (const category of PEOPLE_CATEGORIES) {
+      data[category] = [...document.getElementById(`list-${category}`).querySelectorAll('.card')].map((card) =>
+        collectPerson(category, card),
+      );
+    }
+    const res = await fetch('/api/people', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    const body = await res.json();
+    if (!res.ok || !body.ok) throw new Error(body.error || res.statusText);
+    setStatus('Сохранено ✓', 'ok');
+    location.reload();
+  } catch (err) {
+    setStatus('Ошибка', 'err');
+    problemEl.hidden = false;
+    problemEl.textContent = err.message;
+  }
+});
+
 function esc(value) {
   const div = document.createElement('div');
   div.textContent = value == null ? '' : value;
@@ -830,6 +1151,8 @@ class Handler(BaseHTTPRequestHandler):
             self._handle_save(save_changelog)
         elif self.path == "/api/about":
             self._handle_save(save_about)
+        elif self.path == "/api/people":
+            self._handle_save(save_people)
         else:
             self.send_response(404)
             self.end_headers()

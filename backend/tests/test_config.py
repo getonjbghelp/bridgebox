@@ -14,7 +14,7 @@ def test_defaults_when_no_file(tmp_path: Path):
     assert config.zapret.dir == "zapret"
     assert config.zapret.strategy == "general"
     assert config.logging.level == "info"
-    assert config.ui.theme == "light"
+    assert config.ui.theme == "dark"
     assert config.ui.animations_enabled is True
 
 

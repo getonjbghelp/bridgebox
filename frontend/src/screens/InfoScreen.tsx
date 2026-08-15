@@ -1,6 +1,8 @@
-import { useEffect, useState } from 'react'
+import { AnimatePresence } from 'framer-motion'
+import { useEffect, useRef, useState } from 'react'
 import { BrandLogo } from '../components/BrandLogo'
 import { Modal } from '../components/Modal'
+import { PeopleCredits } from '../components/PeopleCredits'
 import { Section, Row } from '../components/Section'
 import { LINK_ICONS } from '../components/icons'
 import { ABOUT, aboutText, localeText, type AboutLink } from '../lib/content'
@@ -16,6 +18,8 @@ interface AppInfo {
   /** "b1" while pre-release, "" once a final version ships - same source
    *  BetaBadge reads, never duplicated here. */
   label: string
+  /** Empty for an ordinary checkout or build. */
+  channel: string
 }
 
 interface IntegrityStatus {
@@ -38,12 +42,34 @@ interface IntegrityStatus {
  * (BetaBadge's version, IntegrityBanner's check) rather than a second source
  * of truth for either - see lib/content.ts and Api.app_info/integrity_status.
  */
-export function InfoScreen() {
+export function InfoScreen({ active }: { active: boolean }) {
   const strings = useStrings()
   const { locale } = useMotionPrefs()
   const [info, setInfo] = useState<AppInfo | null>(null)
   const [integrity, setIntegrity] = useState<IntegrityStatus | null>(null)
   const [openLink, setOpenLink] = useState<AboutLink | null>(null)
+  // The Links row (custom-SVG icons via dangerouslySetInnerHTML) and
+  // PeopleCredits are the priciest things this screen renders, and neither
+  // is needed for the entrance to read as smooth - only the header/logo/
+  // version block is. All four screens mount together at boot (App.tsx),
+  // hidden behind display:none, so a plain mount-time effect fires at boot
+  // too - long before the user ever navigates here - and defers nothing
+  // useful. `active` is what actually marks the moment this screen goes
+  // display:none -> block, which is also the FIRST time the browser lays
+  // this subtree out at all (a display:none element has no layout to warm
+  // up from). Rendering the heavy parts one frame after THAT, once and
+  // never again (the ref), lets .bb-app__screen's entrance animation get a
+  // cheap first frame instead of racing a layout pass sized for the whole
+  // screen - subsequent visits are already warm, per the fix's own
+  // measurement (see PR notes), so there is nothing left to defer by then.
+  const [showExtras, setShowExtras] = useState(false)
+  const deferredOnce = useRef(false)
+  useEffect(() => {
+    if (!active || deferredOnce.current) return
+    deferredOnce.current = true
+    const id = requestAnimationFrame(() => setShowExtras(true))
+    return () => cancelAnimationFrame(id)
+  }, [active])
 
   useEffect(() => {
     waitForBridgeReady().then(() => {
@@ -91,12 +117,18 @@ export function InfoScreen() {
           label={strings.info.licenseLabel}
           control={<span className="text-caption">{about.license.name}</span>}
         />
+        {info?.channel && (
+          <Row
+            label={strings.info.sourceLabel}
+            control={<span className="text-caption">{strings.info.sourcePublic}</span>}
+          />
+        )}
       </Section>
       <p className="text-caption bb-info__license-text">{renderRich(about.license.text)}</p>
 
       {/* Nothing to show until build_content.py has written at least one link -
           an empty "Ссылки" heading over a blank box is worse than no section. */}
-      {ABOUT.links.length > 0 && (
+      {showExtras && ABOUT.links.length > 0 && (
         <Section title={strings.info.linksTitle}>
           <div className="bb-info__links">
             {ABOUT.links.map((link) => {
@@ -136,21 +168,25 @@ export function InfoScreen() {
         </Section>
       )}
 
-      {openLink && (
-        <Modal title={localeText(openLink.popupTitle, locale)} onClose={() => setOpenLink(null)}>
-          <p className="text-body">{renderRich(localeText(openLink.popupText, locale))}</p>
-          {openLink.popupUrl && (
-            <a
-              className="bb-info__popup-link"
-              href={openLink.popupUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              {localeText(openLink.popupUrlLabel, locale) || openLink.popupUrl}
-            </a>
-          )}
-        </Modal>
-      )}
+      {showExtras && <PeopleCredits />}
+
+      <AnimatePresence>
+        {openLink && (
+          <Modal title={localeText(openLink.popupTitle, locale)} onClose={() => setOpenLink(null)}>
+            <p className="text-body">{renderRich(localeText(openLink.popupText, locale))}</p>
+            {openLink.popupUrl && (
+              <a
+                className="bb-info__popup-link"
+                href={openLink.popupUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {localeText(openLink.popupUrlLabel, locale) || openLink.popupUrl}
+              </a>
+            )}
+          </Modal>
+        )}
+      </AnimatePresence>
     </div>
   )
 }

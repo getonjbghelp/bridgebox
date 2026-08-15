@@ -1,0 +1,69 @@
+.bb-people__pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.bb-people__pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3) var(--space-1) var(--space-1);
+  border-radius: var(--radius-full);
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  font: inherit;
+  transition:
+    border-color var(--dur-fast) var(--ease-standard),
+    color var(--dur-fast) var(--ease-standard);
+}
+
+.bb-people__pill:hover,
+.bb-people__pill:focus-visible {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.bb-people__avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-full);
+  object-fit: cover;
+  flex: none;
+}
+
+.bb-people__avatar--fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-accent-soft);
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.bb-people__pill-name {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.bb-people__detail-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.bb-people__detail-row dt {
+  margin-bottom: var(--space-1);
+  color: var(--color-text-secondary);
+}
+
+.bb-people__detail-row dd {
+  margin: 0;
+}
