@@ -23,6 +23,7 @@ _PRERELEASE_RE = re.compile(r"(?:a|b|rc)\d+$")
 # The numeric components, in order. "0.1.0b1" -> ["0", "1", "0", "1"].
 _VERSION_PART = re.compile(r"\d+")
 _PYPROJECT_VERSION_RE = re.compile(r'^\s*version\s*=\s*"([^"]+)"', re.MULTILINE)
+_PYPROJECT_CHANNEL_RE = re.compile(r'^\s*channel\s*=\s*"([^"]*)"', re.MULTILINE)
 
 _FALLBACK = "0.0.0"
 

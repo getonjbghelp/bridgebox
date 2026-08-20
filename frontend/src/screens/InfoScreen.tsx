@@ -19,6 +19,8 @@ interface AppInfo {
   /** "b1" while pre-release, "" once a final version ships - same source
    *  BetaBadge reads, never duplicated here. */
   label: string
+  /** Empty for an ordinary checkout or build. */
+  channel: string
 }
 
 interface IntegrityStatus {

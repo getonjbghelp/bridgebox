@@ -351,6 +351,7 @@ class Api:
                 # Non-empty only while this is a pre-release; the badge is
                 # rendered on that, and shows β rather than this text.
                 "label": release_label(version),
+                "channel": build_channel(),
             }
         except Exception as exc:
             return {
