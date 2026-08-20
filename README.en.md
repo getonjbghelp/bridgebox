@@ -558,7 +558,6 @@ BridgeBoxDevVersion/
   zapret/                        the DPI bypass engine
     strategies/                  strategies (adapted for BridgeBox)
     lists/list-jackbox.txt       the bypass domain list
-  docs/                          spec notes and protocol research
   tools/
     edit_ui_strings.py           interface text editor (RU/EN side by side)
     build_content.py             editor for the version history and Info screen

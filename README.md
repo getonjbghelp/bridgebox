@@ -568,7 +568,6 @@ BridgeBoxDevVersion/
   zapret/                        движок обхода DPI
     strategies/                  стратегии (адаптированные под BridgeBox)
     lists/list-jackbox.txt       список доменов для обхода
-  docs/                          техзадание и исследования протокола
   tools/
     edit_ui_strings.py           редактор текстов интерфейса (RU/EN рядом)
     build_content.py             редактор истории версий и страницы «Инфо»
