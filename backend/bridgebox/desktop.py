@@ -17,7 +17,7 @@ from urllib.parse import urlsplit
 import aiohttp
 import webview
 
-from .config import Config, load_config, rewrite_for, save_config
+from .config import Config, load_config, migrate_config_file, rewrite_for, save_config
 from .diagnostics import (
     BLOBCAST_TARGETS,
     ECAST_TARGETS,
@@ -44,7 +44,8 @@ from .runtime import BridgeRuntime
 from .runtime_core import RuntimeCore
 from .server.rooms import redact, rewrite_server_field
 from .tls.ca import CA_CERT_FILENAME
-from .version import app_version, build_channel, display_version, release_label
+from .version import app_version, display_version, release_label
+from . import app_update
 from .window_chrome import THEMED_NONE, apply_titlebar_theme
 from .zapret.strategies import (
     discover_strategies,
@@ -70,6 +71,39 @@ DEV_SERVER_URL = "http://localhost:5173"
 # exercise the room-create + room-lookup round trip; test_connection stops
 # there and does not attempt a WS relay connect (see _test_connection_coro).
 TEST_APPTAG = "fourbage"
+
+# How long the STARTUP-triggered network checks (zapret's update check, the
+# app's own update check) wait before actually reaching GitHub. Windows starts
+# every autostart program at once at logon, and this app's checks were
+# joining that scramble the instant the window painted - fine for a check
+# nobody is watching, but it is still CPU/network contention on a machine that
+# is already busy loading everything else that starts with it. The manual
+# "Проверить сейчас" buttons (check_zapret_update, check_app_update) do NOT
+# use this - a person who clicked a button is, by definition, waiting for the
+# answer now.
+STARTUP_NETWORK_CHECK_DELAY_S = 4
+
+# SMOOTH WINDOW REVEAL: pywebview's own default is #FFFFFF, painted the
+# instant the native window is created - before WebView2 has initialised,
+# before index.html's own boot skeleton (which covers everything AFTER that)
+# has a chance to paint anything. On a dark-themed launch that is a white
+# flash for however long WebView2 takes to spin up, then a second, different
+# flash to the skeleton's real background. Matching this to the boot
+# skeleton's own colour makes the native window and the skeleton
+# indistinguishable, so there is nothing left to flash between.
+#
+# Values copied from frontend/index.html's --bb-boot-bg (itself copied from
+# tokens.css's --color-bg - see that file's own comment on why duplication
+# beats an import here) - test_desktop.py's
+# test_boot_background_colors_match_the_frontend_skeleton keeps the two
+# sides honest against each other the same way frontend/test/bootSkeleton.
+# test.ts already does for index.html against tokens.css.
+BOOT_BACKGROUND_LIGHT = "#f8fafc"
+BOOT_BACKGROUND_DARK = "#0a0f1e"
+
+
+def _boot_background_color(theme: str) -> str:
+    return BOOT_BACKGROUND_DARK if theme == "dark" else BOOT_BACKGROUND_LIGHT
 
 
 def is_admin() -> bool:
@@ -132,6 +166,9 @@ class Api:
         config_path,
         project_root,
         log_buffer: LogBuffer,
+        # Injectable so tests don't pay the real delay - see
+        # STARTUP_NETWORK_CHECK_DELAY_S and start_startup_update_check.
+        startup_check_delay_s: float = STARTUP_NETWORK_CHECK_DELAY_S,
     ):
         self._runtime = runtime
         self._runtime_core = runtime_core
@@ -139,6 +176,7 @@ class Api:
         self._config_path = config_path
         self._project_root = project_root
         self._log_buffer = log_buffer
+        self._startup_check_delay_s = startup_check_delay_s
         # Strategy-suite job state, polled by test_strategies_progress().
         self._strategy_future = None
         self._strategy_results: list[dict] = []
@@ -164,6 +202,19 @@ class Api:
         # hasn't gotten there yet); startup_update_check() is how the
         # frontend tells that apart from "still in flight" and "done".
         self._startup_update_future = None
+        # Same shape, for BridgeBox's own release check - see app_update.py
+        # and start_app_update_check(). A separate future/config section from
+        # the zapret one above: the two check different repos, on different
+        # schedules (this one defaults ON - see AppUpdateConfig), and mixing
+        # their state would make "which check is this result even from" a
+        # real question the frontend would have to answer.
+        self._app_update_future = None
+        # The self-update itself (download + swap the running .exe), kicked
+        # off by start_app_apply_update() and polled via app_apply_progress -
+        # same started/done-future shape as everything else here, separate
+        # from _app_update_future because a check and an apply can be in
+        # flight independently and the frontend needs to tell them apart.
+        self._app_apply_future = None
         # Set by main() once the window exists - the folder picker needs it.
         # Stays None in dev/test, where every method must still answer with
         # the standard dict rather than raise.
@@ -300,12 +351,11 @@ class Api:
                 # Non-empty only while this is a pre-release; the badge is
                 # rendered on that, and shows β rather than this text.
                 "label": release_label(version),
-                "channel": build_channel(),
             }
         except Exception as exc:
             return {
                 "ok": False, "error": describe_exception(exc),
-                "version": "", "label": "", "channel": "",
+                "version": "", "label": "",
             }
 
     def get_autostart(self) -> dict:
@@ -672,13 +722,23 @@ class Api:
         test_strategies already use, so a slow or unreachable GitHub (the
         common case on the networks this app exists for - see
         _check_update_coro) never delays the window opening. The frontend
-        picks the result up by polling startup_update_check()."""
+        picks the result up by polling startup_update_check().
+
+        Waits STARTUP_NETWORK_CHECK_DELAY_S before actually reaching GitHub -
+        see that constant. startup_update_check() still reports "started" the
+        instant this is called, so the frontend's poll loop is not fooled
+        into thinking the setting is off during the wait."""
         if not self._config.update.check_on_startup:
             return
         running = self._startup_update_future
         if running is not None and not running.done():
             return
-        self._startup_update_future = self._runtime.submit(self._check_update_coro)
+
+        async def _delayed() -> dict:
+            await asyncio.sleep(self._startup_check_delay_s)
+            return await self._check_update_coro()
+
+        self._startup_update_future = self._runtime.submit(_delayed)
 
     def startup_update_check(self) -> dict:
         """Polled by the frontend once on mount, in place of triggering a
@@ -696,6 +756,180 @@ class Api:
             result = future.result()
         except Exception as exc:
             result = {"ok": False, "error": describe_exception(exc), **empty}
+        return {"started": True, "done": True, **result}
+
+    # ---- BridgeBox's own update check ----
+
+    async def _check_app_update_coro(self) -> dict:
+        installed = app_version()
+        empty = {
+            "installed": installed, "latest": None, "notes": None,
+            "htmlUrl": None, "critical": False, "updateAvailable": False,
+        }
+        try:
+            async with aiohttp.ClientSession() as session:
+                release = await app_update.fetch_latest_release(session)
+        except Exception as exc:
+            # Same reasoning as _check_update_coro: GitHub is routinely
+            # unreachable from the networks this app exists for, and this
+            # runs unattended at every startup - a raw aiohttp traceback in
+            # the log for that is just noise, not a real error.
+            return {"ok": False, "error": describe_exception(exc), **empty}
+
+        return {
+            "ok": True,
+            "error": None,
+            "installed": installed,
+            "latest": release.version,
+            "notes": release.notes,
+            "htmlUrl": release.html_url,
+            "critical": release.critical,
+            "updateAvailable": app_update.is_newer(release.version, installed),
+        }
+
+    def check_app_update(self) -> dict:
+        """Manual "Проверить сейчас" - short, blocking, no startup delay."""
+        try:
+            return self._runtime.run(self._check_app_update_coro, timeout=25)
+        except Exception as exc:
+            return {
+                "ok": False, "error": describe_exception(exc), "installed": app_version(),
+                "latest": None, "notes": None, "htmlUrl": None, "critical": False,
+                "updateAvailable": False,
+            }
+
+    def start_app_update_check(self) -> None:
+        """Fire the background release check, if AppUpdateConfig.
+        check_on_startup is on (the default - unlike zapret's check, this one
+        is how a critical security fix reaches somebody who never opens
+        Settings).
+
+        Same shape as start_startup_update_check: called from main()'s
+        `shown` handler, waits STARTUP_NETWORK_CHECK_DELAY_S so this does not
+        join the logon-time resource scramble on an autostart launch, and
+        guards against a second run starting over a live one."""
+        if not self._config.app_update.check_on_startup:
+            return
+        running = self._app_update_future
+        if running is not None and not running.done():
+            return
+
+        async def _delayed() -> dict:
+            await asyncio.sleep(self._startup_check_delay_s)
+            return await self._check_app_update_coro()
+
+        self._app_update_future = self._runtime.submit(_delayed)
+
+    def app_update_check(self) -> dict:
+        """Polled by the frontend once on mount - same started/done shape as
+        startup_update_check(). Also carries `dismissedVersion`, so the
+        frontend can decide whether to show the modal for `latest` without a
+        second round trip."""
+        future = self._app_update_future
+        empty = {
+            "installed": app_version(), "latest": None, "notes": None,
+            "htmlUrl": None, "critical": False, "updateAvailable": False,
+        }
+        dismissed = self._config.app_update.dismissed_version
+        if future is None:
+            return {"ok": True, "error": None, "started": False, "done": False,
+                     "dismissedVersion": dismissed, **empty}
+        if not future.done():
+            return {"ok": True, "error": None, "started": True, "done": False,
+                     "dismissedVersion": dismissed, **empty}
+        try:
+            result = future.result()
+        except Exception as exc:
+            result = {"ok": False, "error": describe_exception(exc), **empty}
+        return {"started": True, "done": True, "dismissedVersion": dismissed, **result}
+
+    def dismiss_app_update(self, version: str) -> dict:
+        """Remember that the user has already seen and closed the update
+        modal for `version`, so it does not reopen on every launch until a
+        newer one ships.
+
+        Deliberately does NOT affect the critical banner/reminder (see
+        HomeScreen): a critical release must keep nagging even after its
+        modal is dismissed once, or "critical" would mean nothing."""
+        try:
+            self.update_config({"app_update": {"dismissed_version": version}})
+            return {"ok": True, "error": None}
+        except Exception as exc:
+            return {"ok": False, "error": describe_exception(exc)}
+
+    async def _apply_app_update_coro(self) -> dict:
+        """Download the newest release's .exe and swap it in for the one
+        currently running. Never touches config.yaml, logs/, certs/ or
+        zapret/ - only ever writes next to sys.executable, and only that one
+        file (see app_update.replace_running_exe). Does NOT restart on its
+        own: the frontend shows "Перезапустить сейчас" once this reports
+        done, exactly like the zapret update flow already does - restarting a
+        pywebview window from a background thread is not something to do
+        implicitly."""
+        exe_path = app_update.running_exe_path()
+        if exe_path is None:
+            return {
+                "ok": False,
+                "error": "Самообновление доступно только в собранной версии BridgeBox "
+                "(не в режиме разработки).",
+                "version": None,
+            }
+        stage_path = app_update.stage_path_for(exe_path)
+        try:
+            async with aiohttp.ClientSession() as session:
+                release = await app_update.fetch_latest_release(session)
+                if not release.exe_url:
+                    raise RuntimeError(
+                        f"release {release.version} has no .exe asset to self-update from"
+                    )
+                await app_update.download_exe(session, release.exe_url, stage_path)
+            try:
+                # Runs before the swap, not after: the downloaded bytes get
+                # one chance to prove they are what GitHub actually shipped,
+                # and a mismatch must never become the app's own running
+                # binary - see app_update.verify_exe_digest's own docstring
+                # for what this does and does not protect against.
+                await asyncio.to_thread(
+                    app_update.verify_exe_digest, stage_path, release.exe_digest
+                )
+            except Exception:
+                stage_path.unlink(missing_ok=True)
+                raise
+            await asyncio.to_thread(app_update.replace_running_exe, stage_path, exe_path)
+        except Exception as exc:
+            return {"ok": False, "error": describe_exception(exc), "version": None}
+
+        # The exe on disk just changed out from under integrity.py's own
+        # baseline (bridgebox.exe is one of WATCHED_GLOBS) - without this,
+        # the very next launch would show "files were modified" over a
+        # change this process just made itself. Same two lines the zapret
+        # update flow already runs after applying its own update.
+        await asyncio.to_thread(integrity.write_manifest, self._project_root)
+        self._integrity = integrity.IntegrityReport(verified=True)
+
+        logger.info("BridgeBox self-updated to %s - awaiting restart", release.version)
+        return {"ok": True, "error": None, "version": release.version}
+
+    def start_app_apply_update(self) -> None:
+        """User-triggered ("Обновить сейчас") - fire the download+swap in the
+        background. Guards against a second run starting over a live one,
+        same as start_app_update_check."""
+        running = self._app_apply_future
+        if running is not None and not running.done():
+            return
+        self._app_apply_future = self._runtime.submit(self._apply_app_update_coro)
+
+    def app_apply_progress(self) -> dict:
+        """Polled by the frontend after start_app_apply_update()."""
+        future = self._app_apply_future
+        if future is None:
+            return {"started": False, "done": False, "ok": None, "error": None, "version": None}
+        if not future.done():
+            return {"started": True, "done": False, "ok": None, "error": None, "version": None}
+        try:
+            result = future.result()
+        except Exception as exc:
+            result = {"ok": False, "error": describe_exception(exc), "version": None}
         return {"started": True, "done": True, **result}
 
     def start_zapret_update(self) -> dict:
@@ -1445,7 +1679,12 @@ def _deep_merge(base: dict, patch: dict) -> None:
             base[key] = value
 
 
-def main(*, admin_check=is_admin, windows_version=current_windows_version) -> None:
+def main(
+    *,
+    admin_check=is_admin,
+    windows_version=current_windows_version,
+    startup_check_delay_s: float = STARTUP_NETWORK_CHECK_DELAY_S,
+) -> None:
     # Before the admin check on purpose: there is no reason to make someone
     # clear a UAC prompt only to be told the app cannot run here at all.
     version = windows_version()
@@ -1476,6 +1715,28 @@ def main(*, admin_check=is_admin, windows_version=current_windows_version) -> No
 
     config_path = PROJECT_ROOT / "config.yaml"
     config = load_config(config_path)
+    # SECURITY/UX FIX (safe config migration): add any default field a newer
+    # BridgeBox introduced to an EXISTING config.yaml, without touching a
+    # single value the user already set - see migrate_config_file's own
+    # docstring. Before setup_logging on purpose: logging.dir itself could be
+    # one of the fields a future version adds, and this has to see the file
+    # as it will be read from now on.
+    try:
+        migrate_config_file(config_path)
+    except Exception:
+        logger.exception("could not migrate config.yaml - continuing with what loaded")
+
+    # Leftover from a self-update that swapped the .exe on a previous run, or
+    # one that downloaded but never finished (see app_update.replace_running_exe
+    # / verify_exe_digest) - the old image could not be deleted while that
+    # process still held it, so this is where it finally goes. Frozen-only
+    # (running_exe_path() is None in dev) and best-effort.
+    exe_path = app_update.running_exe_path()
+    if exe_path is not None:
+        try:
+            app_update.cleanup_stale_files(exe_path)
+        except Exception:
+            logger.exception("could not clean up leftover self-update files - continuing")
 
     log_buffer = LogBuffer()
     logging_config = config.logging.model_copy(
@@ -1498,6 +1759,7 @@ def main(*, admin_check=is_admin, windows_version=current_windows_version) -> No
         config_path=config_path,
         project_root=PROJECT_ROOT,
         log_buffer=log_buffer,
+        startup_check_delay_s=startup_check_delay_s,
     )
     dev_mode = "--dev" in sys.argv
     if dev_mode:
@@ -1524,7 +1786,17 @@ def main(*, admin_check=is_admin, windows_version=current_windows_version) -> No
 
     # The minimized autostart task launches with --minimized; the window is
     # created hidden so nothing flashes on the desktop at logon.
-    hidden = started_minimized() and config.ui.minimize_to_tray
+    #
+    # BUG FIX: this used to read config.ui.minimize_to_tray - a DIFFERENT
+    # setting ("hide to tray when the window's X is clicked") that has
+    # nothing to do with how the app was launched. A machine with "Запускать
+    # свернутым в трей" (autostart_minimized) on but "Сворачивать в трей при
+    # закрытии" (minimize_to_tray) off still opened a visible window on every
+    # logon - the setting the user actually turned on was never consulted.
+    # --minimized only ever appears in argv via the task this same setting
+    # writes (see autostart._launch_command_parts), so checking it alone is
+    # enough; no second, independently-driftable config read is needed here.
+    hidden = started_minimized()
     window = webview.create_window(
         "BridgeBox",
         url,
@@ -1533,6 +1805,7 @@ def main(*, admin_check=is_admin, windows_version=current_windows_version) -> No
         height=680,
         min_size=(760, 560),
         hidden=hidden,
+        background_color=_boot_background_color(config.ui.theme),
     )
     # The folder picker and the restart both need the window; Api is built
     # before it exists, so it is handed over here rather than reached for
@@ -1574,12 +1847,13 @@ def main(*, admin_check=is_admin, windows_version=current_windows_version) -> No
         nobody is waiting on.
 
         `shown` fires again every time the window returns from the tray, so all
-        three must be safe to call repeatedly - remove() no-ops without an
-        icon, start_bridge_on_launch() no-ops once the bridge is up, and the
-        update check refuses to start a second run while one is in flight."""
+        four must be safe to call repeatedly - remove() no-ops without an
+        icon, start_bridge_on_launch() no-ops once the bridge is up, and both
+        update checks refuse to start a second run while one is in flight."""
         tray.remove()
         api.start_bridge_on_launch()
         api.start_startup_update_check()
+        api.start_app_update_check()
         api.start_integrity_check()
 
     window.events.shown += on_shown

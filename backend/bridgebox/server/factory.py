@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Callable
 from aiohttp import web
 
 from .app import handle_browser_request, wants_html
-from .guard import MIDDLEWARES
+from .guard import MIDDLEWARES, is_top_level_navigation
 from .pages import service_page
 
 # The Ecast roots the game actually talks to, used only to decide which of the
@@ -210,7 +210,20 @@ def build_full_app(
         this split and could silently 404 Blobcast when narrowed. Everything
         else is Ecast, and gets forwarded if the current settings allow that
         path."""
-        if wants_html(request):
+        # SECURITY FIX (remote token leak via a mismatched pair of checks).
+        # guard.refuse_browser_initiated exempts a request from the block
+        # using Sec-Fetch-Mode/Dest (is_top_level_navigation); this branch
+        # used to decide "give it a page instead of forwarding" using a
+        # DIFFERENT test, Accept: text/html (wants_html). An <object>/<embed>
+        # load is a real Sec-Fetch-Mode: navigate with Sec-Fetch-Dest: object
+        # or embed (not "document"), and its Accept header is not required to
+        # contain text/html - so it could pass the guard as a navigation and
+        # still fall through every branch below to a real forward, exactly
+        # like an ordinary blocked request. Checking is_top_level_navigation
+        # here too guarantees this branch fires for every request the guard
+        # ever exempts, so nothing exempted can reach the forwarding branches
+        # further down. See test_h2_reopens_for_an_object_or_embed_style_navigation.
+        if wants_html(request) or is_top_level_navigation(request):
             # Two pages, and the split is by path INSIDE this branch - never
             # ahead of it. A path check that ran first would answer the game
             # with HTML, which is exactly the /tts/generate bug documented at

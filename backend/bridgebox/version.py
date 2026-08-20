@@ -23,7 +23,6 @@ _PRERELEASE_RE = re.compile(r"(?:a|b|rc)\d+$")
 # The numeric components, in order. "0.1.0b1" -> ["0", "1", "0", "1"].
 _VERSION_PART = re.compile(r"\d+")
 _PYPROJECT_VERSION_RE = re.compile(r'^\s*version\s*=\s*"([^"]+)"', re.MULTILINE)
-_PYPROJECT_CHANNEL_RE = re.compile(r'^\s*channel\s*=\s*"([^"]*)"', re.MULTILINE)
 
 _FALLBACK = "0.0.0"
 
@@ -32,7 +31,7 @@ def _pyproject_text() -> str | None:
     """backend/pyproject.toml's own text, wherever this run of BridgeBox
     can find it. Frozen and source-checkout modes look in different places -
     see the two branches - but everything downstream reads the same file
-    content either way, so version and channel parsing share this."""
+    content either way, so version parsing shares this."""
     if getattr(sys, "frozen", False):
         # __file__ inside a frozen module is not a real path on disk -
         # PyInstaller bundles .py sources into its own archive, so the
@@ -113,15 +112,3 @@ def display_version(version_string: str | None = None) -> str:
     if not parts:
         return ""
     return ".".join(parts[:3])
-
-
-def build_channel() -> str:
-    """Empty for a normal checkout or build. A packaging step can leave a
-    `channel` line in pyproject.toml's `[tool.bridgebox]` table alongside
-    `version`, and if one is there this returns it verbatim - same
-    read path as app_version, just a different key."""
-    text = _pyproject_text()
-    if text is None:
-        return ""
-    match = _PYPROJECT_CHANNEL_RE.search(text)
-    return match.group(1) if match else ""

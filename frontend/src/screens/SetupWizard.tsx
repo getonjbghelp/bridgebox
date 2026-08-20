@@ -81,7 +81,7 @@ export function SetupWizard() {
     setSetupComplete,
   } = useMotionPrefs()
   const stepTransition = useStepTransition()
-  const transition = useSpringTransition('default')
+  const transition = useSpringTransition()
 
   const [index, setIndex] = useState(0)
   const [direction, setDirection] = useState(1)

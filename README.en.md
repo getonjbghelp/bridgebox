@@ -7,7 +7,7 @@
 *Made with Claude Sonnet 5 / Opus 5*
 
 [![Release](https://img.shields.io/github/v/release/getonjbghelp/bridgebox?label=release&color=1d4ed8)](https://github.com/getonjbghelp/bridgebox/releases/latest)
-[![License](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-1d4ed8)](LICENSE.md)
+[![License](https://img.shields.io/badge/license-PolyForm%20NonCommercial%201.0.0-1d4ed8)](LICENSE.md)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%20%2F%2011-1d4ed8)](#download)
 [![Downloads](https://img.shields.io/github/downloads/getonjbghelp/bridgebox/total?label=downloads&color=1d4ed8)](https://github.com/getonjbghelp/bridgebox/releases)
 [![Telegram](https://img.shields.io/badge/Telegram-%40bridgeboxofficial-1d4ed8?logo=telegram&logoColor=white)](https://t.me/bridgeboxofficial)
@@ -184,8 +184,7 @@ version history.
 ### Home
 
 The main screen: a big toggle, bridge status, the address with a copy button, the
-connection test button, the connection guide, and a scrolling thank-you ticker (click it
-to see the full list of projects used).
+connection test button, and the connection guide.
 
 ### Settings
 
@@ -194,8 +193,10 @@ Four sections, covered [below](#all-settings).
 ### Info
 
 The logo, a short description of the program, the current version, file integrity
-status, the license, and link buttons (social, donations, and so on) - each either opens
-straight to its address or shows a popup with text. The megaphone button in the sidebar
+status, the program's license, a button listing every third-party component (name,
+author, license, and a link for each - the same list as [CREDITS.md](CREDITS.md)), and
+link buttons (social, donations, and so on) - each either opens straight to its address
+or shows a popup with text. The megaphone button in the sidebar
 leads to the same place the Info screen does - GitHub Issues or a feedback form, for
 reporting a bug. The Info screen's content and the version history behind the β mark
 above aren't hardcoded text, they're data under `frontend/src/data/content/`, which a
@@ -221,20 +222,29 @@ Logs are also written to `logs/bridgebox.log`, rotating at 5 MB.
 
 ## All settings
 
-### System and appearance
+### Language and appearance
 
 | Setting | What it does |
 |---|---|
 | **Language** | "Same as system" (detected automatically), Russian, or English. Applies instantly, no restart - across every screen, the tray, and the browser stub pages. |
 | **Dark theme** | Switches between light and dark. Persists. The window title bar (the strip Windows itself draws, with the close button) recolours along with the interface - fully on Windows 11, only its lightness on Windows 10, since the colour itself stays system-controlled there for reasons outside the app's control. |
 | **Interface animations** | Turns off every transition and animation. Useful on slower machines. |
-| **Start with Windows** | Creates a Task Scheduler task with the highest privilege level (not a registry Run key - without administrator rights the bypass couldn't work anyway). Right next to it, **"Start minimized to tray"** keeps the window from appearing at all on login. |
+
+### Startup and tray
+
+| Setting | What it does |
+|---|---|
+| **Start with Windows** | Creates a Task Scheduler task with the highest privilege level and a raised priority (not a registry Run key - without administrator rights the bypass couldn't work anyway, and the priority means BridgeBox doesn't wait in line behind other startup programs). Right next to it, **"Start minimized to tray"** keeps the window from appearing at all on login. |
 | **Turn on the bridge automatically** | The bridge comes up by itself when the program opens, no need to touch the toggle. |
 | **Minimize to tray on close** | The close button hides the window instead of killing the bypass mid-game. Full exit is through the tray icon's own menu. The tray icon is live: its tooltip and its "Stop the bridge" item always reflect the bridge's actual state. |
+
+### System
+
+| Setting | What it does |
+|---|---|
 | **Hide the console** | On by default - the bypass runs in the background with no separate black window next to the app (this also applies during the wizard's strategy auto-test). Turn it off to watch Zapret's own output live. |
 | **Bridge port** | The local bridge's port, 8443 by default. Change it if that port is taken. Takes effect on the bridge's next start. **Reset** brings it back to 8443. |
-| **Temp file folder** | Where a Zapret update gets downloaded and unpacked (see below). Empty means the system Temp folder. |
-| **Reset all settings** | Puts the whole app back to factory defaults - network, strategy, connection profiles, theme. Asks for confirmation first. The bypass domain list is **not** touched by this. |
+| **Temp file folder** | Where a Zapret update gets downloaded and unpacked (see below). |
 
 ### Network and bypass
 
@@ -254,7 +264,7 @@ Checks for and pulls the latest `winws.exe`, WinDivert, and `.bin` bypass files 
 from Flowseal's GitHub release. It also adapts that release's strategies to BridgeBox's
 own format: new ones get added, ones it already knows get updated in place, and any you
 edited by hand are never overwritten - a file with a "(updated)" suffix appears next to
-them instead. Details in [`zapret/README.md`](zapret/README.md).
+them instead. Details in [`zapret/README.en.md`](zapret/README.en.md).
 
 | Setting | What it does |
 |---|---|
@@ -266,9 +276,24 @@ them instead. Details in [`zapret/README.md`](zapret/README.md).
 After an update the program offers to restart - the new files only take effect once it
 does.
 
-This only updates the bypass engine. A new version of BridgeBox itself has to be
-downloaded from [Releases](https://github.com/getonjbghelp/bridgebox/releases/latest) -
-see [What BridgeBox can't do yet](#what-bridgebox-cant-do-yet).
+This only updates the bypass engine. Updating BridgeBox itself is the next section.
+
+### Updating BridgeBox
+
+Separate from Zapret - the program checks [its own releases on
+GitHub](https://github.com/getonjbghelp/bridgebox/releases/latest), shows what changed,
+and, in a built version (not running from source), can update itself without a trip to
+the browser: it downloads the `.exe`, verifies its checksum against the one GitHub
+itself computed when the release was published, and swaps the running file in. A
+critical security update shows a dedicated red banner that doesn't go away for good
+until it's installed.
+
+| Setting | What it does |
+|---|---|
+| **Installed version** | BridgeBox's own version (not Zapret's). |
+| **Check on startup** | **On** by default - unlike Zapret's check, this is the same channel critical security warnings arrive through. |
+| **Check for updates** | A one-off request to GitHub. |
+| **Update BridgeBox** | Downloads, verifies the checksum, and swaps the `.exe` in. On success it offers to restart - the new version only takes effect after that. Unavailable when running from source - update with `git pull` instead. |
 
 ### Connection profiles
 
@@ -322,6 +347,15 @@ socket.io, and the bridge intercepts it on a separate port):
 
 The reset and delete buttons each have their own **"Don't ask again"** checkbox -
 turning off one doesn't turn off the others.
+
+### Reset settings
+
+Its own section at the very bottom of the Settings screen - the one action here that
+touches every other section at once, rather than a single one.
+
+| Setting | What it does |
+|---|---|
+| **Reset all settings** | Puts the whole app back to factory defaults - network, strategy, connection profiles, theme. Asks for confirmation first. The bypass domain list is **not** touched by this. |
 
 ---
 
@@ -440,10 +474,6 @@ Separate pieces worth knowing about:
 - **Isn't code-signed.** On first launch, Windows SmartScreen may show "Windows
   protected your PC". That's the standard reaction to any new exe without a code-signing
   certificate, not a sign that something's wrong - click "More info" → "Run anyway".
-- **Doesn't update itself.** BridgeBox updates the bypass engine (Zapret) automatically,
-  but a new version of the program itself has to be downloaded from
-  [Releases](https://github.com/getonjbghelp/bridgebox/releases/latest) and swapped in
-  by hand.
 - **Windows 10/11 only.** WinDivert is a Windows-only driver, and the interface runs on
   WebView2, which doesn't exist on other systems or on Windows 7/8/8.1.
 
@@ -595,8 +625,8 @@ BridgeBox is distributed under [PolyForm Noncommercial 1.0.0](LICENSE.md): free 
 modify, and share, not to sell or bundle into a paid product.
 
 Third-party components are licensed separately - the full list with authors and links
-is in [CREDITS.md](CREDITS.md) and on the program's own Info screen (click the "Thanks
-to..." line on the home screen). The main ones: **zapret** (bol-van), the
+is in [CREDITS.md](CREDITS.md) and on the program's own Info screen (the "Show list"
+button next to the license line). The main ones: **zapret** (bol-van), the
 **zapret-discord-youtube** build (Flowseal), **WinDivert** (basil00), **aiohttp**,
 **pywebview**, **React**, and the **Inter**, **Manrope**, and **JetBrains Mono** fonts
 under the SIL OFL 1.1.

@@ -108,9 +108,14 @@ def _preview(
         return "<empty>"
     if not _is_textual(content_type):
         return f"<{len(body)} bytes of {content_type}>"
-    text = redact(body[:limit].decode("utf-8", errors="replace"))
+    # Redact the WHOLE body, then truncate - not the other way around.
+    # _SECRET_RE needs a closing quote to match; truncating first can cut a
+    # real token in half, drop its closing quote out of the slice, and leave
+    # the visible half unredacted in the log. See
+    # test_a_token_straddling_the_preview_truncation_boundary_leaks_partially.
+    text = redact(body.decode("utf-8", errors="replace"))
     suffix = f"... (+{len(body) - limit} bytes)" if len(body) > limit else ""
-    return f"{text}{suffix}"
+    return f"{text[:limit]}{suffix}"
 
 
 def _headers_for_log(headers: dict[str, str]) -> str:

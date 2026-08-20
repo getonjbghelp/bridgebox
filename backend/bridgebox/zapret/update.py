@@ -31,6 +31,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 from .. import i18n
+from ..winlock import retry_locked as _retry_locked_base
 from .strategy_adapt import adapt_strategy, is_unmodified_generated, stamp
 
 logger = logging.getLogger(__name__)
@@ -61,11 +62,6 @@ MAX_MEMBERS = 2000
 
 _VERSION_RE = re.compile(r'zapretver\s*=\s*"([^"]+)"')
 _VERSION_PART = re.compile(r"\d+")
-
-# Windows errors that mean "somebody else is holding this file", as opposed to
-# a real problem with it. ERROR_ACCESS_DENIED is what a loaded kernel driver
-# produces; ERROR_SHARING_VIOLATION is the ordinary open-handle case.
-_LOCKED_WINERRORS = frozenset({5, 32})
 
 # ponytail: fixed linear backoff, ~9s worst case. The real quantity here is how
 # long the WinDivert service takes to unload WinDivert64.sys after the last
@@ -192,10 +188,6 @@ def delete_on_reboot(path: Path) -> bool:
     return ok
 
 
-def _is_locked(exc: BaseException) -> bool:
-    return isinstance(exc, OSError) and getattr(exc, "winerror", None) in _LOCKED_WINERRORS
-
-
 def _retry_locked(
     op,
     *,
@@ -204,31 +196,12 @@ def _retry_locked(
     delay_s: float = LOCK_RETRY_DELAY_S,
     sleep=time.sleep,
 ):
-    """Run op(), retrying only while Windows says the file is locked.
-
-    WinDivert64.sys is a kernel driver, so `winws.exe` exiting does NOT release
-    it - the service unloads it a moment later, asynchronously, and until then
-    every replace() on it fails with WinError 5. Waiting is the whole fix.
-
-    Any other exception is raised on the first attempt: a missing source file
-    or a full disk will never succeed on retry, and burning ~9 seconds of
-    backoff to rediscover that would just make a real error look like a hang.
-    """
-    for attempt in range(1, attempts + 1):
-        try:
-            return op()
-        except Exception as exc:
-            if not _is_locked(exc) or attempt == attempts:
-                raise
-            logger.warning(
-                "%s is locked (%s), attempt %d/%d - waiting %.1fs",
-                what,
-                exc,
-                attempt,
-                attempts,
-                delay_s,
-            )
-            sleep(delay_s)
+    """WinDivert64.sys is a kernel driver, so `winws.exe` exiting does NOT
+    release it - the service unloads it a moment later, asynchronously, and
+    until then every replace() on it fails with WinError 5. Waiting is the
+    whole fix - see winlock.retry_locked for the retry loop itself, shared
+    with app_update.py's own (unrelated-cause, same-winerrors) lock case."""
+    return _retry_locked_base(op, what=what, attempts=attempts, delay_s=delay_s, sleep=sleep)
 
 
 @dataclass(frozen=True)
@@ -745,10 +718,10 @@ def install_release(
     return applied, plan
 
 
-def write_installed_version(zapret_dir: Path, version: str, *, author: str = "Flowseal") -> None:
+def write_installed_version(zapret_dir: Path, version: str) -> None:
     """Restamp ver.installed.txt so the next check compares against what is
     actually on disk."""
     path = Path(zapret_dir) / "ver.installed.txt"
     tmp = path.with_suffix(".tmp")
-    tmp.write_text(f'zapretver = "{version}"\nauthor = "{author}"\n', encoding="utf-8")
+    tmp.write_text(f'zapretver = "{version}"\nauthor = "Flowseal"\n', encoding="utf-8")
     tmp.replace(path)

@@ -6,16 +6,11 @@ import { useMotionPrefs } from '../state/MotionPrefsContext'
 // used for structural UI change by default.
 const SPRING_DEFAULT: Transition = { type: 'spring', bounce: 0, duration: 0.5 }
 
-// A little bounce (~damping 0.8), reserved for momentum-driven interactions
-// (drag release, scroll snap) - never for plain fades/mounts.
-const SPRING_MOMENTUM: Transition = { type: 'spring', bounce: 0.18, duration: 0.55 }
-
 const INSTANT: Transition = { duration: 0 }
 
-export function useSpringTransition(kind: 'default' | 'momentum' = 'default'): Transition {
+export function useSpringTransition(): Transition {
   const { animationsEnabled } = useMotionPrefs()
-  if (!animationsEnabled) return INSTANT
-  return kind === 'momentum' ? SPRING_MOMENTUM : SPRING_DEFAULT
+  return animationsEnabled ? SPRING_DEFAULT : INSTANT
 }
 
 // Short tweens rather than SPRING_DEFAULT, for a swap under AnimatePresence

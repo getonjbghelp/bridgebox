@@ -1,11 +1,14 @@
 """Starting with Windows.
 
-The load-bearing fact these tests pin: the task must be registered with
-/RL HIGHEST. main() exits outright without Administrator, so an autostart
-that launches unelevated does not "mostly work" - it does not run at all.
+The load-bearing facts these tests pin: the task must be registered with
+RunLevel HighestAvailable (main() exits outright without Administrator, so an
+autostart that launches unelevated does not "mostly work" - it does not run
+at all) and at a raised Task Scheduler priority (the whole point of asking
+for this over a plain Run-key entry - see TASK_PRIORITY's comment).
 """
 import subprocess
 import sys
+from pathlib import Path
 
 from bridgebox import autostart
 
@@ -14,10 +17,17 @@ class FakeRunner:
     def __init__(self, returncode: int = 0):
         self.calls: list[list[str]] = []
         self.returncode = returncode
+        # The XML content at the moment schtasks would have read it - the
+        # real file is deleted right after _run() returns, so this is the
+        # only place a test can still see it.
+        self.xml_snapshots: list[str] = []
 
     def __call__(self, cmd, **kwargs):
         self.calls.append(cmd)
         self.kwargs = kwargs
+        if "/XML" in cmd:
+            xml_path = Path(cmd[cmd.index("/XML") + 1])
+            self.xml_snapshots.append(xml_path.read_text(encoding="utf-16"))
 
         class Result:
             returncode = self.returncode
@@ -27,19 +37,43 @@ class FakeRunner:
         return Result()
 
 
-def test_the_task_is_registered_with_the_highest_run_level():
-    """Without /RL HIGHEST the task launches unelevated, main() hits its admin
-    check and exits, and autostart silently does nothing every boot."""
+def test_the_task_is_registered_via_xml_with_the_highest_run_level():
+    """/Create /XML, not the flag-only form - Task Scheduler has no /RL-style
+    flag for Priority, so raising it means going through an XML definition,
+    and RunLevel/LogonTrigger move into that same file."""
     runner = FakeRunner()
 
     assert autostart.enable(runner=runner) is True
 
     argv = runner.calls[0]
     assert argv[0] == "schtasks"
-    assert "/RL" in argv and argv[argv.index("/RL") + 1] == "HIGHEST"
-    assert "/SC" in argv and argv[argv.index("/SC") + 1] == "ONLOGON"
+    assert argv[1] == "/Create"
+    assert "/XML" in argv
     # /F, so toggling it on twice replaces rather than fails.
     assert "/F" in argv
+
+    xml = runner.xml_snapshots[0]
+    assert "<RunLevel>HighestAvailable</RunLevel>" in xml
+    assert "<LogonTrigger>" in xml
+
+
+def test_the_task_is_registered_at_a_raised_priority():
+    """The reason this exists at all: BridgeBox must not sit waiting behind a
+    logon-time pile of other startup programs for a CPU slice while zapret is
+    still down."""
+    runner = FakeRunner()
+
+    autostart.enable(runner=runner)
+
+    assert f"<Priority>{autostart.TASK_PRIORITY}</Priority>" in runner.xml_snapshots[0]
+
+
+def test_a_custom_priority_is_honoured():
+    runner = FakeRunner()
+
+    autostart.enable(priority=2, runner=runner)
+
+    assert "<Priority>2</Priority>" in runner.xml_snapshots[0]
 
 
 def test_the_minimized_variant_passes_the_flag_the_app_reads_back():
@@ -47,19 +81,38 @@ def test_the_minimized_variant_passes_the_flag_the_app_reads_back():
 
     autostart.enable(minimized=True, runner=runner)
 
-    command = runner.calls[0][runner.calls[0].index("/TR") + 1]
-    assert command.endswith("--minimized")
+    assert "<Arguments>-m bridgebox.desktop --minimized</Arguments>" in runner.xml_snapshots[0]
     # The other half of the contract: main() has to recognise it.
     assert autostart.started_minimized(["prog", "--minimized"]) is True
     assert autostart.started_minimized(["prog"]) is False
 
 
-def test_the_launch_command_survives_a_path_with_spaces():
-    """"C:\\Program Files\\..." unquoted is two arguments to schtasks."""
-    command = autostart.launch_command(minimized=False)
+def test_the_temp_xml_file_is_cleaned_up_after_create():
+    """A leftover .xml in %TEMP% on every toggle is exactly the kind of
+    thing that piles up silently for months."""
+    seen_paths: list[Path] = []
 
-    assert command.startswith('"')
-    assert sys.executable in command
+    def runner(cmd, **kwargs):
+        if "/XML" in cmd:
+            seen_paths.append(Path(cmd[cmd.index("/XML") + 1]))
+
+        class Result:
+            returncode = 0
+
+        return Result()
+
+    autostart.enable(runner=runner)
+
+    assert seen_paths and not seen_paths[0].exists()
+
+
+def test_the_launch_command_keeps_the_executable_path_intact():
+    """A path like "C:\\Program Files\\..." must reach the XML's <Command>
+    element whole - unlike a schtasks /TR flag, an XML element has no shell
+    to quote-split for."""
+    command, _arguments = autostart._launch_command_parts(minimized=False)
+
+    assert command == sys.executable
 
 
 def test_a_refused_schtasks_reports_failure_instead_of_raising():

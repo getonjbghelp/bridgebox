@@ -12,6 +12,7 @@ frontend/dist/
 # Runtime data / secrets - never commit
 logs/
 certs/
+
 # paths.temp_dir - where the zapret updater downloads and stages a release
 # (winws.exe, WinDivert64.sys, the .bin payloads, the release zip). All of it
 # is fetched from Flowseal on demand and regenerated, never edited by hand.
@@ -31,3 +32,9 @@ baseline.json
 # GitHub repo content - regenerated on demand, never nested into its own
 # source (committing it would duplicate the entire repo inside itself).
 /githubpubliccode/
+
+# tgbot - internal Telegram release-announcer bot (see tgbot/README.md).
+# Secrets and runtime state never get committed, even to the private repo.
+tgbot/.env
+tgbot/state/
+tgbot/.venv/

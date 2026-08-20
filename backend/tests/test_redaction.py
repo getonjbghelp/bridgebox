@@ -80,6 +80,64 @@ def test_redact_never_raises_on_junk():
         redact(junk)  # must not raise
 
 
+# ---- truncate-then-redact: the ordering used to leak a partial secret ---
+
+
+def test_a_token_straddling_the_preview_truncation_boundary_is_still_hidden():
+    """SECURITY FIX. _preview used to truncate the raw body to a fixed
+    character limit BEFORE calling redact() - see rooms._preview's old
+    `redact(body[:limit].decode(...))`. The JSON-shaped half of redact()'s
+    regex, _SECRET_RE, requires a CLOSING quote to match:
+    `"token"(\\s*:\\s*)"[^"]*"`. When the truncation cut a sensitive value in
+    half, the closing quote fell outside the slice redact() ever saw, the
+    regex silently failed to match, and everything up to the cut point - part
+    of a real room token - was written to the log verbatim.
+
+    Not a contrived value: BODY_PREVIEW_CHARS is 800 in production, upstream
+    field order is Jackbox's choice not ours, and a "token" key landing near
+    that boundary in a real Ecast/Blobcast payload is exactly the kind of
+    thing this module's own docstring says must never reach the log ("That
+    log is written to disk, shown behind a 'Копировать' button, and exported
+    ... so the leak ends with the credential in a stranger's hands.").
+
+    Fixed by redacting the whole body before truncating, so the token is
+    long gone before any cut point can land inside it - the same shape of
+    fix already applied once for the query-string half of this exact leak
+    (H3)."""
+    from bridgebox.server.rooms import _preview
+
+    secret = "SUPERSECRETROOMTOKEN1234567890ABCDEF"
+    pad = "x" * 50
+    body = ('{"ok": true, "body": {"pad": "%s", "token": "%s"}}' % (pad, secret)).encode()
+
+    # Cut the preview right in the middle of the secret's value, before its
+    # closing quote - not a crafted edge case, just where an 800-char limit
+    # would land on a slightly longer real response.
+    cut = body.index(secret.encode()) + 10
+    rendered = _preview(body, limit=cut, content_type="application/json")
+
+    assert secret[:10] not in rendered, "a real token must never appear in a log preview, even partially"
+    assert secret not in rendered
+
+
+def test_a_frame_preview_has_the_same_truncate_after_redact_ordering():
+    """Same fix, second call site - relay.py's WS frame logging reuses
+    redact() the same way rooms.py's HTTP body preview does. Ecast and
+    Blobcast frames carry the same "token" field, at log level INFO when
+    log_frames is on."""
+    from bridgebox.server.relay import _frame_preview
+
+    secret = "SUPERSECRETROOMTOKEN1234567890ABCDEF"
+    pad = "x" * 50
+    frame = '{"ok": true, "body": {"pad": "%s", "token": "%s"}}' % (pad, secret)
+
+    cut = frame.index(secret) + 10
+    rendered = _frame_preview(frame, limit=cut)
+
+    assert secret[:10] not in rendered, "a real token must never appear in a frame preview, even partially"
+    assert secret not in rendered
+
+
 # ---- and that no log line bypasses it -----------------------------------
 
 

@@ -1,0 +1,85 @@
+/* Same red-alert language as IntegrityBanner.css on purpose - two different
+   "something is wrong, act on it" banners that read as two different things
+   would undercut both. Sits above the app the same way, for the same reason:
+   this is a statement about the whole program, not one screen of it. */
+.bb-update-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-danger);
+  background: var(--color-danger-soft);
+  color: var(--color-text-primary);
+}
+
+.bb-update-banner__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 260px;
+}
+
+.bb-update-banner__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-danger);
+}
+
+.bb-update-banner__body {
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.bb-update-banner__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+
+.bb-update-modal__critical-tag {
+  margin: 0 0 var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-danger);
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* The release body, rendered through renderChangelogBody - same paragraph/
+   list rhythm as the zapret update modal's changelog, so the two don't read
+   as two different kinds of text inside otherwise-identical dialogs. */
+.bb-update-modal__notes {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--color-text-secondary);
+}
+.bb-update-modal__notes p {
+  margin: 0 0 var(--space-3);
+}
+.bb-update-modal__notes ul {
+  margin: 0 0 var(--space-3);
+  padding-left: var(--space-5);
+}
+.bb-update-modal__notes :last-child {
+  margin-bottom: 0;
+}
+
+.bb-update-modal__error {
+  font-size: 13px;
+  color: var(--color-danger);
+  flex: 1;
+}
+
+.bb-update-modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border);
+}

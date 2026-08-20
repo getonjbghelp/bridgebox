@@ -44,7 +44,7 @@ export function BetaBadge() {
   const [open, setOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   const closeTimer = useRef<number | undefined>(undefined)
-  const transition = useSpringTransition('default')
+  const transition = useSpringTransition()
 
   const cancelClose = () => {
     if (closeTimer.current !== undefined) {

@@ -121,47 +121,70 @@ def _refusal(request) -> web.Response:
     return web.Response(status=403, body=body, content_type="application/json")
 
 
-@web.middleware
-async def refuse_browser_initiated(request: web.Request, handler):
-    """Refuse anything a browser started, unless it is a plain navigation.
+def build_guard_middlewares(*, exempt_navigation: bool = True) -> tuple:
+    """Build the guard middleware. A factory, not a bare function, because
+    the navigation exemption is only free where something downstream
+    actually keeps its promise to never forward it - see
+    is_top_level_navigation's docstring. That promise held for the main app
+    (factory.forward_or_warn always answers a navigation with a page) but
+    silently did NOT hold for blobcast's socket.io site, which has no page
+    to serve and forwarded an exempted navigation straight to Jackbox
+    (SECURITY FIX, remote token leak - see
+    test_a_page_navigation_to_the_socketio_port_IS_forwarded_to_jackbox).
+    `exempt_navigation=False` is for exactly that case: a site with no safe
+    way to answer a navigation, so browser-shaped traffic is refused
+    outright regardless of Sec-Fetch-Mode/Dest. The real game never sends
+    Sec-Fetch-* at all, so this has no effect on it either way."""
 
-    A middleware rather than a check inside each handler, and that is the
-    lesson from the token leak fixed in the same audit: that one was not a
-    broken function, it was six call sites each having to remember. There are
-    three entry points here - the catch-all, the WS relay route, and the whole
-    socket.io site on its own port - and a rule that has to be repeated at each
-    is a rule that will be missing from the fourth."""
-    markers = fetch_metadata(request)
-    if markers and not is_top_level_navigation(request):
-        logger.warning(
-            "refused a browser-initiated request: %s %s (origin=%s, %s)",
-            request.method,
-            redact(request.path_qs),
-            request.headers.get("Origin", "-"),
-            ", ".join(f"{k}={v}" for k, v in markers.items()),
-        )
-        return _refusal(request)
+    @web.middleware
+    async def refuse_browser_initiated(request: web.Request, handler):
+        """Refuse anything a browser started, unless it is a plain
+        navigation this site can safely answer with a page instead of
+        forwarding.
 
-    if not markers and "Origin" in request.headers:
-        # Not blocked - see the module docstring on why Origin alone is not a
-        # safe signal to act on. Logged so that if this ever shows up from a
-        # real browser, the decision can be revisited on evidence.
-        logger.info(
-            "request carries Origin but no fetch metadata: %s %s (origin=%s)",
-            request.method,
-            redact(request.path_qs),
-            request.headers.get("Origin"),
-        )
+        A middleware rather than a check inside each handler, and that is the
+        lesson from the token leak fixed in the same audit: that one was not a
+        broken function, it was six call sites each having to remember. There
+        are three entry points here - the catch-all, the WS relay route, and
+        the whole socket.io site on its own port - and a rule that has to be
+        repeated at each is a rule that will be missing from the fourth."""
+        markers = fetch_metadata(request)
+        if markers and not (exempt_navigation and is_top_level_navigation(request)):
+            logger.warning(
+                "refused a browser-initiated request: %s %s (origin=%s, %s)",
+                request.method,
+                redact(request.path_qs),
+                request.headers.get("Origin", "-"),
+                ", ".join(f"{k}={v}" for k, v in markers.items()),
+            )
+            return _refusal(request)
 
-    response = await handler(request)
+        if not markers and "Origin" in request.headers:
+            # Not blocked - see the module docstring on why Origin alone is not
+            # a safe signal to act on. Logged so that if this ever shows up
+            # from a real browser, the decision can be revisited on evidence.
+            logger.info(
+                "request carries Origin but no fetch metadata: %s %s (origin=%s)",
+                request.method,
+                redact(request.path_qs),
+                request.headers.get("Origin"),
+            )
 
-    # Already on the wire for a WebSocket - prepare() sent the handshake before
-    # the handler returned, and touching the headers then raises.
-    if not getattr(response, "prepared", False):
-        for name in list(response.headers):
-            if name.lower() in CORS_RESPONSE_HEADERS:
-                del response.headers[name]
-    return response
+        response = await handler(request)
+
+        # Already on the wire for a WebSocket - prepare() sent the handshake
+        # before the handler returned, and touching the headers then raises.
+        if not getattr(response, "prepared", False):
+            for name in list(response.headers):
+                if name.lower() in CORS_RESPONSE_HEADERS:
+                    del response.headers[name]
+        return response
+
+    return (refuse_browser_initiated,)
 
 
-MIDDLEWARES = (refuse_browser_initiated,)
+# The permissive default: navigations are exempted because forward_or_warn
+# (factory.py) always answers one with a page, never a forward. Every site
+# that cannot make the same promise must build its own middlewares with
+# build_guard_middlewares(exempt_navigation=False) instead of reusing this.
+MIDDLEWARES = build_guard_middlewares()

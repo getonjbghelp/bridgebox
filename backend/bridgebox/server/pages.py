@@ -6,10 +6,10 @@ to a CDN is exactly what does not work, and the bridge serves no static assets
 of its own - `frontend/dist` is loaded by pywebview over file://, not by this
 server. Everything is inline.
 
-The mark is the bridge glyph from components/icons.tsx (IconBridge), the same
-one the setup wizard opens with. Deliberately not the full BrandLogo wordmark:
-that is 16 KB of path data, and a second copy of it here would drift from the
-real one the moment either changed.
+The mark is the same bridge-glyph path data the frontend's now-removed
+IconBridge component once drew (nothing there renders it any more, so this
+is its only surviving copy). Deliberately not the full BrandLogo wordmark:
+that is 16 KB of path data, not worth inlining into a server-rendered page.
 """
 from __future__ import annotations
 

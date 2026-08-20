@@ -78,6 +78,12 @@
 - License: OFL-1.1
 - Used for: Monospace typeface (addresses, ports, log lines, timings), vendored as a Latin+Cyrillic subset in frontend/src/assets/fonts/
 
+## PyInstaller
+- Author: [PyInstaller Development Team](https://github.com/pyinstaller)
+- Project: https://github.com/pyinstaller/pyinstaller
+- License: GPL-2.0-or-later (with an exception for programs it builds)
+- Used for: Packages the backend into the portable .exe for release - its bootloader is embedded in the resulting binary; BridgeBox's own code is not covered by this license
+
 ## johnbox
 - Author: [InvoxiPlayGames](https://github.com/InvoxiPlayGames)
 - Project: https://github.com/InvoxiPlayGames/johnbox

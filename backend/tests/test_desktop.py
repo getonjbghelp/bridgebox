@@ -158,7 +158,11 @@ def test_main_proceeds_when_admin(monkeypatch):
     monkeypatch.setattr(desktop.webview, "create_window", fake_create_window)
     monkeypatch.setattr(desktop.webview, "start", lambda: None)
 
-    desktop.main(admin_check=lambda: True)
+    # Real startup checks wait 4s for GitHub - this test's on_shown call
+    # below runs them for real (a real Api, no fakes), and without this the
+    # sleep outlives the test and the background loop's teardown, leaving a
+    # "Task was destroyed but it is pending" warning at interpreter exit.
+    desktop.main(admin_check=lambda: True, startup_check_delay_s=0)
 
     assert created["title"] == "BridgeBox"
     assert created["url"] == desktop.DEV_SERVER_URL
@@ -260,6 +264,9 @@ def _make_api(tmp_path: Path, *, config: Config | None = None, runtime=None, run
         config_path=tmp_path / "config.yaml",
         project_root=tmp_path,
         log_buffer=LogBuffer(),
+        # Real startup checks wait STARTUP_NETWORK_CHECK_DELAY_S before
+        # reaching GitHub - tests want the fake network call, not the wait.
+        startup_check_delay_s=0,
     )
 
 
@@ -833,6 +840,27 @@ def test_api_test_strategies_both_runs_two_full_stages(tmp_path: Path):
     assert progress["stage"] is None
 
 
+def test_api_test_strategies_skip_heavy_excludes_the_heavy_group(tmp_path: Path):
+    """The pre-filter lives here, not in run_strategy_suite - this is the
+    only place skip_heavy=True is ever actually honoured."""
+    strategies_dir = tmp_path / "zapret" / "strategies"
+    strategies_dir.mkdir(parents=True)
+    (strategies_dir / "General.bat").write_text("@echo off\n")
+    (strategies_dir / "Fake TLS Auto.bat").write_text("@echo off\n")
+    config = Config()
+    config.zapret.dir = "zapret"
+    api = _make_api(
+        tmp_path, config=config, runtime_core=FakeRuntimeCore(zapret_process=_FakeZapretProcess())
+    )
+
+    started = api.test_strategies(skip_heavy=True)
+    assert started["ok"] is True, started
+    assert started["total"] == 1  # only General - "Прочие" was filtered out
+
+    progress = api.test_strategies_progress()
+    assert [r["key"] for r in progress["results"]] == ["general"]
+
+
 def test_api_test_strategies_blobcast_only_probes_blobcast_targets(tmp_path: Path):
     strategies_dir = tmp_path / "zapret" / "strategies"
     strategies_dir.mkdir(parents=True)
@@ -994,6 +1022,39 @@ def test_start_startup_update_check_runs_when_the_setting_is_on(tmp_path: Path, 
     assert result["latest"] == "1.10.0"
 
 
+def test_start_startup_update_check_waits_the_configured_delay_first(tmp_path: Path, monkeypatch):
+    """STARTUP_NETWORK_CHECK_DELAY_S exists so a machine autostarting BridgeBox
+    at Windows logon does not have this join every other logon program's rush
+    at GitHub the instant the window paints. Regression guard: the delay is
+    actually awaited, with the configured value, before the network call."""
+    config = Config()
+    config.update.check_on_startup = True
+    api = _make_api(tmp_path, config=config)
+    api._startup_check_delay_s = 7.5
+
+    calls = []
+
+    async def fake_sleep(seconds):
+        calls.append(seconds)
+
+    async def fake_check_update_coro():
+        # The delay must happen BEFORE the network call, not after or
+        # alongside it - otherwise a slow GitHub round trip could still land
+        # during the logon rush this delay exists to dodge.
+        assert calls == [7.5], "the network check ran before (or without) the startup delay"
+        return {"ok": True, "error": None, "installed": "1.0.0", "latest": "1.0.0", "updateAvailable": False}
+
+    monkeypatch.setattr(desktop.asyncio, "sleep", fake_sleep)
+    monkeypatch.setattr(api, "_check_update_coro", fake_check_update_coro)
+
+    api.start_startup_update_check()
+    result = api.startup_update_check()
+
+    assert calls == [7.5]
+    assert result["done"] is True
+    assert result["ok"] is True
+
+
 def test_startup_update_check_survives_a_network_failure(tmp_path: Path):
     config = Config()
     config.update.check_on_startup = True
@@ -1015,6 +1076,387 @@ def test_startup_update_check_survives_a_network_failure(tmp_path: Path):
     assert result["done"] is True
     assert result["ok"] is False
     assert "dns failure" in result["error"]
+
+
+# ---- BridgeBox's own update check -----------------------------------------
+
+
+def test_app_update_check_never_started_reports_not_started(tmp_path: Path):
+    api = _make_api(tmp_path)
+
+    result = api.app_update_check()
+
+    assert result["started"] is False
+    assert result["done"] is False
+    assert result["dismissedVersion"] == ""
+
+
+def test_start_app_update_check_does_nothing_when_the_setting_is_off(tmp_path: Path):
+    config = Config()
+    config.app_update.check_on_startup = False
+    api = _make_api(tmp_path, config=config)
+
+    api.start_app_update_check()
+
+    assert api.app_update_check()["started"] is False
+
+
+def test_app_update_check_is_on_by_default(tmp_path: Path):
+    """Unlike zapret's UpdateConfig, this one defaults ON - see
+    AppUpdateConfig's docstring for why (it is how a critical fix reaches
+    somebody who never opens Settings)."""
+    assert Config().app_update.check_on_startup is True
+
+
+def test_start_app_update_check_runs_when_the_setting_is_on(tmp_path: Path, monkeypatch):
+    api = _make_api(tmp_path)  # check_on_startup defaults to True
+
+    async def fake_check_app_update_coro():
+        return {
+            "ok": True, "error": None, "installed": "0.1.2", "latest": "0.1.3",
+            "notes": "- Fixed a glitch", "htmlUrl": "https://github.com/getonjbghelp/bridgebox/releases/tag/v0.1.3",
+            "critical": False, "updateAvailable": True,
+        }
+
+    monkeypatch.setattr(api, "_check_app_update_coro", fake_check_app_update_coro)
+
+    api.start_app_update_check()
+    result = api.app_update_check()
+
+    assert result["started"] is True
+    assert result["done"] is True
+    assert result["ok"] is True
+    assert result["updateAvailable"] is True
+    assert result["latest"] == "0.1.3"
+    assert result["critical"] is False
+
+
+def test_start_app_update_check_waits_the_configured_delay_first(tmp_path: Path, monkeypatch):
+    api = _make_api(tmp_path)
+    api._startup_check_delay_s = 3.0
+    calls = []
+
+    async def fake_sleep(seconds):
+        calls.append(seconds)
+
+    async def fake_check_app_update_coro():
+        assert calls == [3.0], "the network check ran before (or without) the startup delay"
+        return {
+            "ok": True, "error": None, "installed": "0.1.2", "latest": "0.1.2",
+            "notes": "", "htmlUrl": None, "critical": False, "updateAvailable": False,
+        }
+
+    monkeypatch.setattr(desktop.asyncio, "sleep", fake_sleep)
+    monkeypatch.setattr(api, "_check_app_update_coro", fake_check_app_update_coro)
+
+    api.start_app_update_check()
+
+    assert calls == [3.0]
+
+
+def test_a_second_start_app_update_check_does_not_pile_onto_a_live_run(tmp_path: Path):
+    """`shown` fires again on every restore from the tray - a second call
+    while one is in flight must not start a second network request."""
+    api = _make_api(tmp_path)
+
+    class NeverDoneFuture:
+        def done(self):
+            return False
+
+    api._app_update_future = NeverDoneFuture()
+    calls = {"n": 0}
+
+    def spy_submit(coro_factory):
+        calls["n"] += 1
+        return NeverDoneFuture()
+
+    api._runtime.submit = spy_submit
+    api.start_app_update_check()
+
+    assert calls["n"] == 0
+
+
+def test_check_app_update_is_the_synchronous_manual_variant(tmp_path: Path, monkeypatch):
+    """"Проверить сейчас" - blocking, no startup delay, distinct future from
+    the automatic one."""
+    api = _make_api(tmp_path)
+
+    async def fake_check_app_update_coro():
+        return {
+            "ok": True, "error": None, "installed": "0.1.2", "latest": "0.1.4",
+            "notes": "notes", "htmlUrl": "https://github.com/getonjbghelp/bridgebox/releases/tag/v0.1.4",
+            "critical": True, "updateAvailable": True,
+        }
+
+    monkeypatch.setattr(api, "_check_app_update_coro", fake_check_app_update_coro)
+
+    result = api.check_app_update()
+
+    assert result["ok"] is True
+    assert result["critical"] is True
+    assert result["latest"] == "0.1.4"
+
+
+def test_check_app_update_never_raises_returns_error_dict(tmp_path: Path):
+    class FailingRuntime(FakeRuntime):
+        def run(self, coro_factory, timeout=25.0):
+            raise OSError("no network")
+
+    api = _make_api(tmp_path, runtime=FailingRuntime())
+
+    result = api.check_app_update()
+
+    assert result["ok"] is False
+    assert "no network" in result["error"]
+    assert result["updateAvailable"] is False
+
+
+def test_dismiss_app_update_persists_the_version_and_is_readable_back(tmp_path: Path):
+    api = _make_api(tmp_path)
+
+    result = api.dismiss_app_update("0.1.3")
+
+    assert result["ok"] is True
+    assert api._config.app_update.dismissed_version == "0.1.3"
+    assert api.app_update_check()["dismissedVersion"] == "0.1.3"
+
+
+def test_check_app_update_coro_reads_the_installed_version_from_version_module(
+    tmp_path: Path, monkeypatch
+):
+    """installed must be BridgeBox's own version - not zapret's, not a copy
+    kept anywhere else, so it can never drift from what version.app_version()
+    (the single source of truth - see version.py) reports."""
+    monkeypatch.setattr(desktop, "app_version", lambda: "9.9.9")
+
+    async def failing_fetch(session, **kw):
+        # Fails fast so this only checks what `installed` was recorded as,
+        # not a real network round trip - aiohttp.ClientSession() itself is
+        # still real (same as _check_update_coro's own design), just never
+        # asked to make a request.
+        raise OSError("no network")
+
+    monkeypatch.setattr(desktop.app_update, "fetch_latest_release", failing_fetch)
+    api = _make_api(tmp_path)
+
+    import asyncio as _asyncio
+
+    result = _asyncio.run(api._check_app_update_coro())
+
+    assert result["installed"] == "9.9.9"
+
+
+# ---- BridgeBox's own self-update (download + swap the running .exe) ------
+
+
+def test_apply_app_update_coro_errors_out_when_not_frozen(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(desktop.app_update, "running_exe_path", lambda: None)
+    api = _make_api(tmp_path)
+
+    import asyncio as _asyncio
+
+    result = _asyncio.run(api._apply_app_update_coro())
+
+    assert result["ok"] is False
+    assert result["version"] is None
+
+
+def test_apply_app_update_coro_downloads_and_swaps_the_exe(tmp_path: Path, monkeypatch):
+    exe_path = tmp_path / "BridgeBox.exe"
+    exe_path.write_bytes(b"old")
+    monkeypatch.setattr(desktop.app_update, "running_exe_path", lambda: exe_path)
+
+    class _Release:
+        version = "0.2.0"
+        exe_url = "https://objects.githubusercontent.com/BridgeBox.exe"
+        exe_digest = None  # nothing to verify - see verify_exe_digest's own tests
+
+    async def fake_fetch(session, **kw):
+        return _Release()
+
+    downloaded = {}
+
+    async def fake_download_exe(session, url, dest, **kw):
+        downloaded["url"] = url
+        downloaded["dest"] = dest
+        dest.write_bytes(b"new")
+        return dest
+
+    swapped = {}
+
+    def fake_replace(new_path, current_path):
+        swapped["new_path"] = new_path
+        swapped["current_path"] = current_path
+        current_path.write_bytes(new_path.read_bytes())
+        return current_path.with_name(current_path.name + ".old")
+
+    manifest_calls = []
+    monkeypatch.setattr(desktop.app_update, "fetch_latest_release", fake_fetch)
+    monkeypatch.setattr(desktop.app_update, "download_exe", fake_download_exe)
+    monkeypatch.setattr(desktop.app_update, "replace_running_exe", fake_replace)
+    monkeypatch.setattr(desktop.integrity, "write_manifest", lambda root: manifest_calls.append(root))
+    api = _make_api(tmp_path)
+
+    import asyncio as _asyncio
+
+    result = _asyncio.run(api._apply_app_update_coro())
+
+    assert result == {"ok": True, "error": None, "version": "0.2.0"}
+    assert downloaded["url"] == "https://objects.githubusercontent.com/BridgeBox.exe"
+    assert swapped["current_path"] == exe_path
+    assert exe_path.read_bytes() == b"new"
+    # The exe on disk just changed out from under integrity.py's own
+    # baseline - without a fresh manifest the very next launch would show
+    # "files were modified" over a change this process just made itself.
+    assert manifest_calls == [tmp_path]
+    assert api._integrity.verified is True
+
+
+def test_apply_app_update_coro_refuses_a_digest_mismatch_and_does_not_swap(
+    tmp_path: Path, monkeypatch
+):
+    exe_path = tmp_path / "BridgeBox.exe"
+    exe_path.write_bytes(b"old")
+    monkeypatch.setattr(desktop.app_update, "running_exe_path", lambda: exe_path)
+
+    class _Release:
+        version = "0.2.0"
+        exe_url = "https://objects.githubusercontent.com/BridgeBox.exe"
+        exe_digest = "sha256:" + "a" * 64  # will never match b"new"
+
+    async def fake_fetch(session, **kw):
+        return _Release()
+
+    async def fake_download_exe(session, url, dest, **kw):
+        dest.write_bytes(b"new")
+        return dest
+
+    replace_calls = []
+
+    def fake_replace(new_path, current_path):
+        replace_calls.append((new_path, current_path))
+        raise AssertionError("must not swap in an exe that failed its checksum")
+
+    monkeypatch.setattr(desktop.app_update, "fetch_latest_release", fake_fetch)
+    monkeypatch.setattr(desktop.app_update, "download_exe", fake_download_exe)
+    monkeypatch.setattr(desktop.app_update, "replace_running_exe", fake_replace)
+    api = _make_api(tmp_path)
+
+    import asyncio as _asyncio
+
+    result = _asyncio.run(api._apply_app_update_coro())
+
+    assert result["ok"] is False
+    assert replace_calls == []
+    assert exe_path.read_bytes() == b"old"
+    stage_path = tmp_path / "BridgeBox.exe.new"
+    assert not stage_path.exists(), "a checksum-rejected download must not linger on disk"
+
+
+def test_apply_app_update_coro_errors_when_the_release_has_no_exe_asset(
+    tmp_path: Path, monkeypatch
+):
+    exe_path = tmp_path / "BridgeBox.exe"
+    exe_path.write_bytes(b"old")
+    monkeypatch.setattr(desktop.app_update, "running_exe_path", lambda: exe_path)
+
+    class _Release:
+        version = "0.2.0"
+        exe_url = None
+
+    async def fake_fetch(session, **kw):
+        return _Release()
+
+    monkeypatch.setattr(desktop.app_update, "fetch_latest_release", fake_fetch)
+    api = _make_api(tmp_path)
+
+    import asyncio as _asyncio
+
+    result = _asyncio.run(api._apply_app_update_coro())
+
+    assert result["ok"] is False
+    assert exe_path.read_bytes() == b"old", "must not touch the exe if there is nothing to apply"
+
+
+def test_apply_app_update_coro_never_touches_config(tmp_path: Path, monkeypatch):
+    """The whole point: a self-update replaces one exe file next to itself
+    and nothing else - config.yaml is a completely separate file this
+    function never opens."""
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("server:\n  port: 12345\n", encoding="utf-8")
+    exe_path = tmp_path / "BridgeBox.exe"
+    exe_path.write_bytes(b"old")
+    monkeypatch.setattr(desktop.app_update, "running_exe_path", lambda: exe_path)
+
+    class _Release:
+        version = "0.2.0"
+        exe_url = "https://objects.githubusercontent.com/BridgeBox.exe"
+        exe_digest = None
+
+    async def fake_fetch(session, **kw):
+        return _Release()
+
+    async def fake_download_exe(session, url, dest, **kw):
+        dest.write_bytes(b"new")
+        return dest
+
+    def fake_replace(new_path, current_path):
+        current_path.write_bytes(new_path.read_bytes())
+        return current_path.with_name(current_path.name + ".old")
+
+    monkeypatch.setattr(desktop.app_update, "fetch_latest_release", fake_fetch)
+    monkeypatch.setattr(desktop.app_update, "download_exe", fake_download_exe)
+    monkeypatch.setattr(desktop.app_update, "replace_running_exe", fake_replace)
+    api = _make_api(tmp_path)
+
+    import asyncio as _asyncio
+
+    _asyncio.run(api._apply_app_update_coro())
+
+    assert config_path.read_text(encoding="utf-8") == "server:\n  port: 12345\n"
+
+
+def test_app_apply_progress_when_never_started(tmp_path: Path):
+    api = _make_api(tmp_path)
+
+    result = api.app_apply_progress()
+
+    assert result == {"started": False, "done": False, "ok": None, "error": None, "version": None}
+
+
+def test_start_app_apply_update_then_app_apply_progress_reports_done(
+    tmp_path: Path, monkeypatch
+):
+    async def fake_coro():
+        return {"ok": True, "error": None, "version": "0.2.0"}
+
+    api = _make_api(tmp_path)
+    monkeypatch.setattr(api, "_apply_app_update_coro", fake_coro)
+
+    api.start_app_apply_update()
+    result = api.app_apply_progress()
+
+    assert result == {"started": True, "done": True, "ok": True, "error": None, "version": "0.2.0"}
+
+
+def test_a_second_start_app_apply_update_does_not_pile_onto_a_live_run(tmp_path: Path):
+    api = _make_api(tmp_path)
+
+    class NeverDoneFuture:
+        def done(self):
+            return False
+
+    api._app_apply_future = NeverDoneFuture()
+    calls = {"n": 0}
+
+    def spy_submit(coro_factory):
+        calls["n"] += 1
+        return NeverDoneFuture()
+
+    api._runtime.submit = spy_submit
+    api.start_app_apply_update()
+
+    assert calls["n"] == 0
 
 
 def test_api_get_log_lines_delegates_to_log_buffer(tmp_path: Path):
@@ -1918,7 +2360,7 @@ def _main_with_spy_tray(monkeypatch, *, minimize_to_tray: bool):
         return tray
 
     monkeypatch.setattr(desktop, "TrayIcon", make_tray)
-    desktop.main(admin_check=lambda: True)
+    desktop.main(admin_check=lambda: True, startup_check_delay_s=0)
     return window, trays[0]
 
 
@@ -1979,6 +2421,98 @@ def test_the_tray_menu_can_tell_whether_the_bridge_is_running(monkeypatch):
 
     assert callable(tray.kwargs["bridge_running"])
     assert tray.kwargs["bridge_running"]() is False
+
+
+def _main_capturing_create_window(monkeypatch, *, argv, autostart_minimized: bool, minimize_to_tray: bool):
+    """Like _main_with_spy_tray, but returns what main() actually passed to
+    webview.create_window - the `hidden` kwarg is the whole point here, and
+    the other helper's fake discards kwargs entirely."""
+    monkeypatch.setattr(sys, "argv", argv)
+    window = _FakeWindow()
+    window.events.loaded = _FakeEvent()
+    created: dict = {}
+
+    def fake_create_window(title, url, **kwargs):
+        created.update(kwargs)
+        return window
+
+    monkeypatch.setattr(desktop.webview, "create_window", fake_create_window)
+    monkeypatch.setattr(desktop.webview, "start", lambda: None)
+
+    config = Config()
+    config.ui.autostart_minimized = autostart_minimized
+    config.ui.minimize_to_tray = minimize_to_tray
+    monkeypatch.setattr(desktop, "load_config", lambda path: config)
+    monkeypatch.setattr(desktop, "TrayIcon", SpyTray)
+
+    desktop.main(admin_check=lambda: True, startup_check_delay_s=0)
+    return created
+
+
+def test_minimized_autostart_launch_creates_a_hidden_window_even_with_minimize_to_tray_off(monkeypatch):
+    """BUG FIX regression: the window used to open visible on every minimized
+    autostart launch unless "Сворачивать в трей при закрытии" (an unrelated
+    setting) happened to also be on, because `hidden` read
+    config.ui.minimize_to_tray instead of config.ui.autostart_minimized. This
+    pins the fix with the tray-on-close setting deliberately OFF, so the old
+    bug (wrong field) cannot pass by coincidence."""
+    created = _main_capturing_create_window(
+        monkeypatch, argv=["prog", "--dev", "--minimized"],
+        autostart_minimized=True, minimize_to_tray=False,
+    )
+
+    assert created["hidden"] is True
+
+
+def test_a_normal_launch_is_never_hidden_even_with_autostart_minimized_on(monkeypatch):
+    """The flag has to come from HOW the process was launched, not merely
+    from a config value that says what a future autostart launch should do -
+    otherwise every ordinary double-click while the setting is on would open
+    invisibly."""
+    created = _main_capturing_create_window(
+        monkeypatch, argv=["prog", "--dev"],
+        autostart_minimized=True, minimize_to_tray=True,
+    )
+
+    assert created["hidden"] is False
+
+
+# ---- smooth window reveal: native background matches the boot skeleton ---
+
+
+def test_boot_background_color_picks_the_right_theme():
+    assert desktop._boot_background_color("dark") == desktop.BOOT_BACKGROUND_DARK
+    assert desktop._boot_background_color("light") == desktop.BOOT_BACKGROUND_LIGHT
+
+
+def test_boot_background_colors_match_the_frontend_skeleton():
+    """Keeps desktop.py's BOOT_BACKGROUND_* honest against
+    frontend/index.html's --bb-boot-bg, the same way frontend/test/
+    bootSkeleton.test.ts already keeps index.html honest against
+    tokens.css - a mismatch here is a real, visible flash between the
+    native window's first paint and the HTML skeleton's own, on whichever
+    theme drifted."""
+    import re
+
+    index_html = Path(__file__).resolve().parents[2] / "frontend" / "index.html"
+    if not index_html.exists():
+        return  # not every checkout has the frontend tree present
+
+    text = index_html.read_text(encoding="utf-8")
+    dark_region = text[text.index("[data-theme='dark']") :]
+    light_match = re.search(r"--bb-boot-bg:\s*([^;]+);", text[: text.index("[data-theme='dark']")])
+    dark_match = re.search(r"--bb-boot-bg:\s*([^;]+);", dark_region)
+
+    assert light_match and light_match.group(1).strip().lower() == desktop.BOOT_BACKGROUND_LIGHT
+    assert dark_match and dark_match.group(1).strip().lower() == desktop.BOOT_BACKGROUND_DARK
+
+
+def test_main_passes_the_boot_background_color_to_create_window(monkeypatch):
+    created = _main_capturing_create_window(
+        monkeypatch, argv=["prog", "--dev"], autostart_minimized=False, minimize_to_tray=False,
+    )
+
+    assert created["background_color"] == desktop.BOOT_BACKGROUND_DARK  # Config()'s theme default
 
 
 def test_open_external_url_calls_webbrowser_open(tmp_path: Path, monkeypatch):

@@ -86,11 +86,11 @@ def stop_windivert_service(runner: Runner = subprocess.run) -> bool:
     return stopped
 
 
-class Launcher(Protocol):
-    def __call__(self, cmd: list[str], **kwargs: Any) -> Any: ...
-
-
 class Runner(Protocol):
+    """subprocess.Popen- or subprocess.run-shaped - same call signature
+    either way, so one Protocol covers both; the parameter name at each call
+    site (`popen=`/`runner=`) already says which behavior is expected."""
+
     def __call__(self, cmd: list[str], **kwargs: Any) -> Any: ...
 
 
@@ -263,7 +263,7 @@ class ZapretProcess:
     def __init__(
         self,
         *,
-        popen: Launcher = subprocess.Popen,
+        popen: Runner = subprocess.Popen,
         runner: Runner = subprocess.run,
         job: JobAssigner | None = None,
         allowed_root: Path | None = None,

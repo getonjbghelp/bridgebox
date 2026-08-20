@@ -14,6 +14,7 @@ import { useSpringTransition } from '../lib/motion'
 import { useStrings, t, strategyGroupLabel } from '../lib/strings'
 import { callBridge, isNativeBridgeAvailable, waitForBridgeReady } from '../lib/bridge'
 import { isConfirmSkipped, setConfirmSkipped } from '../lib/confirmSkip'
+import { clearPoll } from '../lib/poll'
 import './SettingsScreen.css'
 
 interface StrategyOption {
@@ -132,9 +133,29 @@ interface AppConfig {
   server: { port: number }
   zapret: { strategy: string; hide_console: boolean }
   update: { check_on_startup: boolean }
+  app_update: { check_on_startup: boolean }
   ui?: { start_bridge_on_launch: boolean; minimize_to_tray: boolean }
   profiles: ProfilesConfig
   rewrite: RewriteConfig
+}
+
+interface AppUpdateCheckResponse {
+  ok: boolean
+  error: string | null
+  installed: string | null
+  latest: string | null
+  notes: string | null
+  htmlUrl: string | null
+  critical: boolean
+  updateAvailable: boolean
+}
+
+interface AppApplyProgress {
+  started: boolean
+  done: boolean
+  ok: boolean | null
+  error: string | null
+  version: string | null
 }
 
 interface ConfigResponse {
@@ -328,6 +349,18 @@ export function SettingsScreen() {
   const [updateProgress, setUpdateProgress] = useState<UpdateProgressResponse | null>(null)
   const updatePollRef = useRef<number | undefined>(undefined)
 
+  // BridgeBox's own release check - separate from the zapret one above.
+  // AppUpdateBanner already polls this in the background app-wide; this is
+  // just the manual "Проверить сейчас" + toggle, same shape as zapret's.
+  const [appCheckOnStartup, setAppCheckOnStartup] = useState(false)
+  const [appUpdateCheck, setAppUpdateCheck] = useState<DiagState>('idle')
+  const [appUpdateInfo, setAppUpdateInfo] = useState<AppUpdateCheckResponse | null>(null)
+  // Self-update (download + swap the running .exe) - separate from the check
+  // above, which only asks "is there something newer".
+  const [appApplyState, setAppApplyState] = useState<DiagState>('idle')
+  const [appApplyError, setAppApplyError] = useState<string | null>(null)
+  const appApplyPollRef = useRef<number | undefined>(undefined)
+
   const [hostlistOpen, setHostlistOpen] = useState(false)
   const [hostlist, setHostlist] = useState('')
   const [hostlistError, setHostlistError] = useState<string | null>(null)
@@ -337,11 +370,12 @@ export function SettingsScreen() {
   // RESTART_SCOPE for why this is not simply "something changed".
   const [pendingRestart, setPendingRestart] = useState<'bridge' | 'app' | null>(null)
   const [restarting, setRestarting] = useState(false)
-  const transition = useSpringTransition('default')
+  const transition = useSpringTransition()
 
   // Leaving the screen mid-run must not keep polling a dead component.
   useEffect(() => () => stopPolling(), [])
   useEffect(() => () => stopUpdatePolling(), [])
+  useEffect(() => () => stopAppApplyPolling(), [])
 
   useEffect(() => {
     waitForBridgeReady().then(() => {
@@ -397,12 +431,43 @@ export function SettingsScreen() {
     }
   }, [])
 
+  // Same shape as the zapret poll above, but for BridgeBox's own release
+  // check - main() already fires this in the background (see
+  // Api.start_app_update_check), so this just picks up the result once it
+  // lands, which is also how the version row gets a value without the user
+  // clicking "Проверить сейчас" first.
+  useEffect(() => {
+    let cancelled = false
+    let attempts = 0
+
+    async function poll() {
+      if (cancelled || !isNativeBridgeAvailable()) return
+      const result = await callBridge<AppUpdateCheckResponse & { started: boolean; done: boolean }>(
+        'app_update_check',
+      )
+      if (cancelled || !result.started) return
+      if (!result.done) {
+        attempts += 1
+        if (attempts < 20) window.setTimeout(poll, 1000)
+        return
+      }
+      setAppUpdateInfo(result)
+      setAppUpdateCheck(result.ok ? 'done' : 'error')
+    }
+
+    waitForBridgeReady().then(poll)
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   function applyConfig(config: AppConfig) {
     setStrategy(config.zapret.strategy)
     setPort(String(config.server.port))
     committedPortRef.current = String(config.server.port)
     setHideConsole(config.zapret.hide_console)
     setCheckOnStartup(config.update.check_on_startup)
+    setAppCheckOnStartup(config.app_update.check_on_startup)
     setProfiles(config.profiles)
     if (config.ui) {
       setStartBridgeOnLaunch(config.ui.start_bridge_on_launch)
@@ -565,6 +630,7 @@ export function SettingsScreen() {
       ui: null,
       paths: null,
       update: null,
+      app_update: null,
       proxy: null,
       profiles: null,
       rewrite: null,
@@ -756,11 +822,64 @@ export function SettingsScreen() {
     setUpdateCheck(result.ok ? 'done' : 'error')
   }
 
+  async function runAppUpdateCheck() {
+    setAppUpdateCheck('running')
+    setAppUpdateInfo(null)
+    if (!isNativeBridgeAvailable()) return setAppUpdateCheck('idle')
+    const result = await callBridge<AppUpdateCheckResponse>('check_app_update')
+    setAppUpdateInfo(result)
+    setAppUpdateCheck(result.ok ? 'done' : 'error')
+  }
+
+  function openAppReleasePage() {
+    if (!appUpdateInfo?.htmlUrl || !isNativeBridgeAvailable()) return
+    callBridge('open_external_url', appUpdateInfo.htmlUrl).catch(() => {})
+  }
+
+  function stopAppApplyPolling() {
+    clearPoll(appApplyPollRef)
+  }
+
+  async function runAppApplyUpdate() {
+    if (!isNativeBridgeAvailable()) return
+    setAppApplyState('running')
+    setAppApplyError(null)
+    await callBridge('start_app_apply_update').catch(() => {})
+    stopAppApplyPolling()
+    appApplyPollRef.current = window.setInterval(async () => {
+      try {
+        const progress = await callBridge<AppApplyProgress>('app_apply_progress')
+        if (!progress.done) return
+        stopAppApplyPolling()
+        if (progress.ok) {
+          setAppApplyState('done')
+        } else {
+          setAppApplyState('error')
+          setAppApplyError(progress.error)
+        }
+      } catch (err) {
+        stopAppApplyPolling()
+        setAppApplyState('error')
+        setAppApplyError(String(err))
+      }
+    }, 1000)
+  }
+
+  function restartAfterAppUpdate() {
+    confirmThenRun({
+      id: 'restart-after-app-update',
+      title: strings.settings.updateRestartTitle,
+      body: strings.settings.updateRestartBody,
+      confirmLabel: strings.settings.updateRestartButton,
+      danger: true,
+      action: () => {
+        callBridge('restart_app').catch(() => {})
+      },
+    })
+  }
+
   function stopUpdatePolling() {
-    if (updatePollRef.current !== undefined) {
-      window.clearInterval(updatePollRef.current)
-      updatePollRef.current = undefined
-    }
+    clearPoll(updatePollRef)
   }
 
   async function startUpdate() {
@@ -822,10 +941,7 @@ export function SettingsScreen() {
   }
 
   function stopPolling() {
-    if (pollRef.current !== undefined) {
-      window.clearInterval(pollRef.current)
-      pollRef.current = undefined
-    }
+    clearPoll(pollRef)
   }
 
   async function runStrategyTest() {
@@ -1114,7 +1230,10 @@ export function SettingsScreen() {
         {strings.settings.title}
       </h1>
 
-      <Section title={strings.settings.systemSectionTitle}>
+      <Section
+        title={strings.settings.appearanceSectionTitle}
+        description={strings.settings.appearanceSectionDescription}
+      >
         <Row
           label={strings.settings.languageLabel}
           hint={strings.settings.languageHint}
@@ -1141,6 +1260,12 @@ export function SettingsScreen() {
           label={strings.settings.animationsLabel}
           control={<Toggle checked={animationsEnabled} onChange={setAnimationsEnabled} />}
         />
+      </Section>
+
+      <Section
+        title={strings.settings.startupSectionTitle}
+        description={strings.settings.startupSectionDescription}
+      >
         {/* Reflects what Windows actually has, not what config.yaml believes -
             the task can be deleted in Task Scheduler behind our back, so
             get_autostart reads the task itself. */}
@@ -1193,9 +1318,12 @@ export function SettingsScreen() {
           }
         />
         {autostartError && <p className="text-caption bb-diag__error">{autostartError}</p>}
-        {/* Below the startup group, with the port and the temp folder: these
-            three are the machinery, the four above are about when and how the
-            app shows up. */}
+      </Section>
+
+      <Section
+        title={strings.settings.systemSectionTitle}
+        description={strings.settings.systemSectionDescription}
+      >
         <Row
           label={strings.settings.hideConsoleLabel}
           hint={strings.settings.hideConsoleHint}
@@ -1246,27 +1374,6 @@ export function SettingsScreen() {
                 {strings.settings.tempDirButton}
               </Button>
             </div>
-          }
-        />
-        <Row
-          label={strings.settings.factoryResetLabel}
-          hint={strings.settings.factoryResetHint}
-          control={
-            <Button
-              variant="danger"
-              onClick={() =>
-                confirmThenRun({
-                  id: 'factory-reset',
-                  title: strings.settings.factoryResetConfirmTitle,
-                  body: strings.settings.factoryResetConfirmBody,
-                  confirmLabel: strings.settings.factoryResetButton,
-                  danger: true,
-                  action: factoryReset,
-                })
-              }
-            >
-              {strings.settings.factoryResetButton}
-            </Button>
           }
         />
       </Section>
@@ -1428,6 +1535,106 @@ export function SettingsScreen() {
       </Section>
 
       <Section
+        title={strings.settings.appUpdateSectionTitle}
+        description={strings.settings.appUpdateSectionDescription}
+      >
+        <Row
+          label={strings.settings.appUpdateVersionLabel}
+          control={<span className="text-mono">{appUpdateInfo?.installed ?? '—'}</span>}
+        />
+        <Row
+          label={strings.settings.updateCheckOnStartupLabel}
+          hint={strings.settings.appUpdateCheckOnStartupHint}
+          control={
+            <Toggle
+              checked={appCheckOnStartup}
+              onChange={(v) => {
+                setAppCheckOnStartup(v)
+                persist({ app_update: { check_on_startup: v } })
+              }}
+            />
+          }
+        />
+        <Row
+          label={strings.settings.updateCheckLabel}
+          hint={strings.settings.appUpdateCheckHint}
+          control={
+            <div className="bb-diag">
+              <Button
+                variant="secondary"
+                onClick={runAppUpdateCheck}
+                disabled={appUpdateCheck === 'running'}
+              >
+                {appUpdateCheck === 'running'
+                  ? strings.settings.updateCheckButtonRunning
+                  : strings.settings.updateCheckButtonIdle}
+              </Button>
+              <DiagBadge state={appUpdateCheck} />
+            </div>
+          }
+        />
+        {appUpdateInfo?.ok && appUpdateInfo.updateAvailable && appApplyState !== 'done' && (
+          <Row
+            label={strings.settings.appUpdateApplyLabel}
+            hint={
+              appApplyState === 'error'
+                ? t(strings.appUpdate.applyFailed, { error: appApplyError ?? '' })
+                : strings.settings.appUpdateApplyHint
+            }
+            control={
+              <div className="bb-diag">
+                <Button
+                  variant="primary"
+                  onClick={runAppApplyUpdate}
+                  disabled={appApplyState === 'running'}
+                >
+                  {strings.settings.appUpdateApplyButton}
+                </Button>
+                <DiagBadge state={appApplyState} />
+                {appApplyState === 'error' && (
+                  <Button variant="ghost" onClick={openAppReleasePage}>
+                    {strings.settings.appUpdateOpenReleaseButton}
+                  </Button>
+                )}
+              </div>
+            }
+          />
+        )}
+        {appApplyState === 'done' && (
+          <Row
+            label={strings.settings.appUpdateApplyLabel}
+            hint={strings.settings.appUpdateApplyDoneHint}
+            control={
+              <Button variant="danger" onClick={restartAfterAppUpdate}>
+                {strings.settings.updateRestartButton}
+              </Button>
+            }
+          />
+        )}
+        {appUpdateInfo?.ok && appUpdateInfo.updateAvailable && appUpdateInfo.critical && (
+          <p className="text-caption bb-diag__error">
+            {strings.settings.appUpdateCriticalNote}
+          </p>
+        )}
+        {appUpdateInfo?.ok && !appUpdateInfo.updateAvailable && appUpdateInfo.latest && (
+          <p className="text-caption">
+            {t(strings.settings.updateUpToDate, { version: appUpdateInfo.latest })}
+          </p>
+        )}
+        {appUpdateInfo?.ok && appUpdateInfo.updateAvailable && (
+          <p className="text-caption">
+            {t(strings.settings.updateAvailable, {
+              latest: appUpdateInfo.latest ?? '?',
+              installed: appUpdateInfo.installed ?? '?',
+            })}
+          </p>
+        )}
+        {appUpdateInfo && !appUpdateInfo.ok && (
+          <p className="text-caption bb-diag__error">{appUpdateInfo.error}</p>
+        )}
+      </Section>
+
+      <Section
         title={strings.settings.profilesSectionTitle}
         description={strings.settings.profilesSectionDescription}
       >
@@ -1584,6 +1791,38 @@ export function SettingsScreen() {
         {/* Backend validation lands here now - the address and the rewrite
             fields it checks both live in this section. */}
         {configError && <p className="text-caption bb-diag__error">{configError}</p>}
+      </Section>
+
+      {/* Last on the page and its own section, not folded into "Система":
+          this is the one action here that touches every other section on
+          this screen at once and cannot be undone, so it gets to be found by
+          scrolling to the end, not by reading past it on the way to the
+          port field. */}
+      <Section
+        title={strings.settings.dangerZoneSectionTitle}
+        description={strings.settings.dangerZoneSectionDescription}
+      >
+        <Row
+          label={strings.settings.factoryResetLabel}
+          hint={strings.settings.factoryResetHint}
+          control={
+            <Button
+              variant="danger"
+              onClick={() =>
+                confirmThenRun({
+                  id: 'factory-reset',
+                  title: strings.settings.factoryResetConfirmTitle,
+                  body: strings.settings.factoryResetConfirmBody,
+                  confirmLabel: strings.settings.factoryResetButton,
+                  danger: true,
+                  action: factoryReset,
+                })
+              }
+            >
+              {strings.settings.factoryResetButton}
+            </Button>
+          }
+        />
       </Section>
 
       <AnimatePresence>

@@ -88,16 +88,6 @@
   margin-top: var(--space-2);
 }
 
-.bb-diag__steps {
-  margin: 0 0 var(--space-4);
-  padding-left: var(--space-5);
-  color: var(--color-text-secondary);
-  font-size: 13px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
 /* Each row used to be its own independent grid, so its 1fr tracks were sized
    against only *that* row's content - the header row (long domain names)
    and the data rows (short "мс" values) ended up with different column

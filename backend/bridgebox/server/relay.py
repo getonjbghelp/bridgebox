@@ -60,10 +60,14 @@ def _close_reason_bytes(text: str) -> bytes:
 
 def _frame_preview(data: str, limit: int = FRAME_PREVIEW_CHARS) -> str:
     # Redacted like HTTP bodies are: the WS stream carries the same room
-    # token, and every frame is logged at debug level.
-    if len(data) <= limit:
-        return redact(data)
-    return f"{redact(data[:limit])}... (+{len(data) - limit} chars)"
+    # token, and every frame is logged at debug level. Redact the WHOLE
+    # frame before truncating - the same truncate-before-redact ordering as
+    # rooms._preview leaked a partial token when the cut landed inside one;
+    # see test_a_frame_preview_has_the_same_truncate_then_redact_ordering.
+    text = redact(data)
+    if len(text) <= limit:
+        return text
+    return f"{text[:limit]}... (+{len(data) - limit} chars)"
 
 
 class WsLike(Protocol):

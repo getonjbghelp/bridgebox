@@ -174,8 +174,8 @@
   text-align: left;
 }
 
-/* "Как подключить игру" and the ticker travel together at the bottom, so the
-   diagnostics can grow without pushing either of them around. */
+/* "Как подключить игру" sits at the bottom, so the diagnostics can grow
+   without pushing it around. */
 .bb-home__footer {
   /* margin-top: auto is load-bearing - it is what keeps the toggle at the
      optical centre while the diagnostics block expands below it. Replacing it
@@ -188,67 +188,6 @@
   align-items: center;
   gap: var(--space-3);
   width: 100%;
-}
-
-.bb-home__ticker {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-2);
-  max-width: 100%;
-  border: none;
-  background: transparent;
-  color: var(--color-text-tertiary);
-  font-size: 12px;
-  cursor: pointer;
-}
-.bb-home__ticker:hover {
-  color: var(--color-text-secondary);
-}
-
-/* A fixed box for text whose width swings from "bol-van" to "Samuel Colvin
-   and contributors". Left to size itself it widened the centred column and
-   shifted the whole screen sideways on every turnover. Height is fixed for
-   the same reason vertically: the two spans overlap during the swap. */
-.bb-home__ticker-slot {
-  position: relative;
-  display: block;
-  height: 18px;
-  min-width: 0;
-  flex: 0 1 auto;
-}
-
-.bb-home__ticker-text {
-  display: block;
-  line-height: 18px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.bb-home__credits-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
-
-.bb-home__credits-row {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--space-3);
-}
-
-.bb-home__credits-row a {
-  color: var(--color-accent);
-  font-weight: 600;
-  text-decoration: none;
-}
-.bb-home__credits-row a:hover {
-  text-decoration: underline;
 }
 
 /* "A new Zapret is available" - sits above the footer buttons, quiet enough

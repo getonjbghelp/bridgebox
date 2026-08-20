@@ -1,0 +1,60 @@
+/* No max-height/overflow of its own - .bb-modal__body (Modal.css) is
+   already the scroll container, bounded by .bb-modal's own max-height. A
+   second scrolling ancestor here was the double scrollbar: the list scrolled
+   inside itself AND the modal body scrolled around that, both routes to the
+   same content. */
+.bb-licenses {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bb-licenses__item + .bb-licenses__item {
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border);
+}
+
+.bb-licenses__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.bb-licenses__name {
+  font-size: var(--text-base);
+  font-weight: var(--weight-semibold);
+  color: var(--color-text-primary);
+}
+.bb-licenses__name:hover {
+  color: var(--color-accent);
+}
+
+/* Neutral on purpose - unlike the changelog's minor/major/critical badge,
+   a license type is not a severity signal, so it gets no colour meaning. */
+.bb-licenses__badge {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  background: var(--color-surface-sunken);
+  color: var(--color-text-secondary);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  white-space: nowrap;
+}
+
+.bb-licenses__author {
+  display: block;
+  margin-top: 2px;
+}
+.bb-licenses__author:hover {
+  color: var(--color-accent);
+}
+
+.bb-licenses__purpose {
+  margin: var(--space-2) 0 0;
+  line-height: 1.5;
+}

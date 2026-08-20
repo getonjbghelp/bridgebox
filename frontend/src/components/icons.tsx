@@ -159,22 +159,6 @@ export function IconFolder({ size = 28 }: IconProps) {
 // mark. Stroke weight stays 1.6 so they read as the same family scaled up
 // rather than a second, chunkier set.
 
-/** Welcome. A span with two towers and a cable - not a literal suspension
- *  bridge, just enough to say "something crosses a gap here". */
-export function IconBridge({ size = 20 }: IconProps) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 20 20" fill="none" aria-hidden="true">
-      <path
-        d="M1.5 13.5h17M4.5 13.5V6M15.5 13.5V6M1.5 9.5c1.6 0 2.4-3.5 3-3.5M18.5 9.5c-1.6 0-2.4-3.5-3-3.5M4.5 6c1.9 0 3.6 3 5.5 3s3.6-3 5.5-3M10 13.5V9"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  )
-}
-
 /** Security. The shackle is its own path so the wizard can animate it
  *  dropping into the body - hence no single combined outline. */
 export function IconLock({ size = 20, closed = true }: IconProps & { closed?: boolean }) {

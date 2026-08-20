@@ -11,7 +11,7 @@ interface ToggleProps {
 }
 
 export function Toggle({ checked, onChange, size = 'sm', label, disabled }: ToggleProps) {
-  const transition = useSpringTransition('default')
+  const transition = useSpringTransition()
 
   return (
     <button

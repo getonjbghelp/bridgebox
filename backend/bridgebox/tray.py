@@ -34,6 +34,8 @@ logger = logging.getLogger(__name__)
 # not so frequent it wakes a background process for no reason.
 SYNC_INTERVAL_MS = 2000
 
+TITLE = "BridgeBox"
+
 
 class TrayIcon:
     """Wraps a WinForms NotifyIcon bound to the pywebview window.
@@ -46,14 +48,12 @@ class TrayIcon:
         self,
         window,
         *,
-        title: str = "BridgeBox",
         on_quit=None,
         on_stop_bridge=None,
         bridge_running=None,
         lang=None,
     ):
         self._window = window
-        self._title = title
         self._on_quit = on_quit
         # Stops the bridge without closing the app, so somebody who tucked
         # BridgeBox away mid-session can turn the bypass off without first
@@ -147,7 +147,7 @@ class TrayIcon:
     ) -> bool:
         try:
             icon = NotifyIcon()
-            icon.Text = self._title
+            icon.Text = TITLE
             icon.Icon = self._window_icon(Icon, SystemIcons)
 
             menu = ContextMenuStrip()
@@ -229,7 +229,7 @@ class TrayIcon:
             if self._icon is not None:
                 # The tooltip is the only status a hidden app can show.
                 key = "tray.tooltip_running" if running else "tray.tooltip_stopped"
-                self._icon.Text = i18n.t(key, lang, title=self._title)
+                self._icon.Text = i18n.t(key, lang, title=TITLE)
         except Exception:
             logger.exception("could not refresh the tray menu")
 

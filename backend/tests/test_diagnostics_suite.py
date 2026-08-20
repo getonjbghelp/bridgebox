@@ -95,30 +95,6 @@ async def test_run_strategy_suite_switches_and_probes_each_strategy(tmp_path: Pa
     assert all(set(r["targets"].keys()) == {name for name, _ in ECAST_TARGETS} for r in results)
 
 
-async def test_run_strategy_suite_skips_heavy_group_by_default(tmp_path: Path):
-    strategies_dir = tmp_path / "strategies"
-    strategies_dir.mkdir()
-    (strategies_dir / "General.bat").write_text("@echo off\n")
-    (strategies_dir / "Fake TLS Auto.bat").write_text("@echo off\n")
-    strategies = discover_strategies(strategies_dir)
-
-    switched = []
-
-    async def fake_switch(key):
-        switched.append(key)
-
-    results = await run_strategy_suite(
-        strategies.values(),
-        switch=fake_switch,
-        session_factory=lambda: FakeSession(),
-        skip_heavy=True,
-        settle_s=0,
-    )
-
-    assert switched == ["general"]
-    assert [r["key"] for r in results] == ["general"]
-
-
 async def test_run_strategy_suite_streams_each_result_as_it_lands(tmp_path: Path):
     """The popup fills in as the suite runs; without streaming a user stares
     at an empty table for the minutes a full run takes."""

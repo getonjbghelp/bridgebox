@@ -116,6 +116,15 @@ export const CREDITS: CreditEntry[] = [
     purpose: 'Моноширинный шрифт: адреса, порты, строки логов, тайминги',
   },
   {
+    name: 'PyInstaller',
+    author: 'PyInstaller Development Team',
+    authorUrl: 'https://github.com/pyinstaller',
+    projectUrl: 'https://github.com/pyinstaller/pyinstaller',
+    license: 'GPL-2.0-or-later (с исключением для собранных программ)',
+    purpose:
+      'Собирает backend в portable .exe для сборки - его bootloader вшит в готовый бинарник, сам код BridgeBox под эту лицензию не подпадает',
+  },
+  {
     name: 'johnbox',
     author: 'InvoxiPlayGames',
     authorUrl: 'https://github.com/InvoxiPlayGames',

@@ -22,7 +22,7 @@ def test_pyproject_wins_over_installed_metadata():
     """Measured, not assumed: `pip install -e .` records the version at install
     time, so an editable checkout kept reporting "0.1.0" while pyproject
     already said "0.1.0b1". The file the developer edits has to win."""
-    assert version_mod.app_version() == "0.1.1b1"
+    assert version_mod.app_version() == "0.1.2b1"
 
 
 def test_display_version_keeps_the_patch_component():
@@ -46,15 +46,3 @@ def test_the_shipped_version_is_a_beta():
     assert version_mod.release_label() == "b1"
 
 
-def test_build_channel_reads_an_optional_pyproject_field(monkeypatch):
-    monkeypatch.setattr(
-        version_mod, "_pyproject_text",
-        lambda: 'version = "0.1.1b1"\n[tool.bridgebox]\nchannel = "public"\n',
-    )
-    assert version_mod.build_channel() == "public"
-
-
-def test_build_channel_is_empty_by_default():
-    """This checkout's own pyproject.toml carries no `channel` line - only a
-    packaging step some builds go through adds one."""
-    assert version_mod.build_channel() == ""

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ClosingOverlay } from './components/ClosingOverlay'
 import { IntegrityBanner } from './components/IntegrityBanner'
+import { AppUpdateBanner } from './components/AppUpdateBanner'
 import { Sidebar } from './components/Sidebar'
 import { HomeScreen } from './screens/HomeScreen'
 import { SettingsScreen } from './screens/SettingsScreen'
@@ -32,6 +33,10 @@ function App() {
   // until setupComplete is known.
   useEffect(() => {
     if (setupComplete === null) return
+    // #root itself crossfades in under the skeleton (see index.html's
+    // #root.bb-root--visible) - toggled in the same effect, not a separate
+    // one, so the two fades start on the same frame rather than racing.
+    document.getElementById('root')?.classList.add('bb-root--visible')
     const boot = document.getElementById('bb-boot')
     if (!boot) return
     boot.classList.add('bb-boot--done')
@@ -82,6 +87,7 @@ function App() {
     // in it.
     <div className="bb-app-shell" data-prewarm={prewarming}>
       <IntegrityBanner />
+      <AppUpdateBanner />
       <div className="bb-app">
         <Sidebar active={screen} onSelect={setScreen} />
       {/*

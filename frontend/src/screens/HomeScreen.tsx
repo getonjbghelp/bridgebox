@@ -7,8 +7,7 @@ import { Button } from '../components/Button'
 import { Modal } from '../components/Modal'
 import { ConnectGuide } from '../components/ConnectGuide'
 import { DiagBadge, type DiagState } from '../components/DiagBadge'
-import { IconCheck, IconCopy, IconHeart } from '../components/icons'
-import { CREDITS } from '../data/credits'
+import { IconCheck, IconCopy } from '../components/icons'
 import { useSpringTransition } from '../lib/motion'
 import { useStrings, t } from '../lib/strings'
 import { callBridge, isNativeBridgeAvailable, waitForBridgeReady } from '../lib/bridge'
@@ -59,15 +58,13 @@ export function HomeScreen() {
   const [bridgeError, setBridgeError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
   const [showInstructions, setShowInstructions] = useState(false)
-  const [showCredits, setShowCredits] = useState(false)
-  const [tickerIndex, setTickerIndex] = useState(0)
   const [connectionTest, setConnectionTest] = useState<DiagState>('idle')
   const [connectionSteps, setConnectionSteps] = useState<string[]>([])
   const [connectionError, setConnectionError] = useState<string | null>(null)
   const [zapretUpdate, setZapretUpdate] = useState<StartupUpdateCheck | null>(null)
   const [updateStarting, setUpdateStarting] = useState(false)
   const [updateError, setUpdateError] = useState<string | null>(null)
-  const transition = useSpringTransition('default')
+  const transition = useSpringTransition()
 
   const enabled = status?.running ?? false
   const host = status?.host ?? FALLBACK_HOST
@@ -120,15 +117,6 @@ export function HomeScreen() {
     status?.zapretNotice && status.zapretNotice !== dismissedNotice
       ? status.zapretNotice
       : null
-
-  useEffect(() => {
-    // 1.8s was faster than the line could comfortably be read before it
-    // changed under you.
-    const id = window.setInterval(() => {
-      setTickerIndex((i) => (i + 1) % CREDITS.length)
-    }, 2800)
-    return () => window.clearInterval(id)
-  }, [])
 
   // The steps list is a one-time diagnostic reading, not a persistent status -
   // it stays correct only until the next start/stop, and nothing else ever
@@ -437,29 +425,6 @@ export function HomeScreen() {
         <Button variant="secondary" onClick={() => setShowInstructions(true)}>
           {strings.home.howToConnectButton}
         </Button>
-
-        <button className="bb-home__ticker" onClick={() => setShowCredits(true)}>
-          <IconHeart size={12} />
-          {/* Fixed box, one line, ellipsis. The names differ in length by a
-              lot ("bol-van" against "Samuel Colvin and contributors"), and
-              with the text free to size itself the widest one grew the
-              centred column and nudged everything on the screen sideways
-              every time the ticker turned over. */}
-          <span className="bb-home__ticker-slot">
-            <AnimatePresence mode="wait" initial={false}>
-              <motion.span
-                key={CREDITS[tickerIndex].name}
-                className="bb-home__ticker-text"
-                initial={{ opacity: 0, y: 4 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -4 }}
-                transition={{ duration: 0.25 }}
-              >
-                {t(strings.home.thanksTicker, { author: CREDITS[tickerIndex].author })}
-              </motion.span>
-            </AnimatePresence>
-          </span>
-        </button>
       </div>
 
       <AnimatePresence>
@@ -470,27 +435,6 @@ export function HomeScreen() {
         )}
       </AnimatePresence>
 
-      <AnimatePresence>
-        {showCredits && (
-          <Modal title={strings.home.creditsModalTitle} onClose={() => setShowCredits(false)} maxWidth={560}>
-            <ul className="bb-home__credits-list">
-              {CREDITS.map((entry) => (
-                <li key={entry.name}>
-                  <div className="bb-home__credits-row">
-                    <a href={entry.projectUrl} target="_blank" rel="noreferrer">
-                      {entry.name}
-                    </a>
-                    <span className="text-caption">{entry.license}</span>
-                  </div>
-                  <p className="text-caption">
-                    {t(strings.home.creditsEntryLine, { author: entry.author, purpose: entry.purpose })}
-                  </p>
-                </li>
-              ))}
-            </ul>
-          </Modal>
-        )}
-      </AnimatePresence>
     </div>
   )
 }

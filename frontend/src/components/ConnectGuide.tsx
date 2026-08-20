@@ -24,7 +24,7 @@ type Platform = 'steam' | 'other'
 export function ConnectGuide({ launchOption, address }: { launchOption: string; address: string }) {
   const strings = useStrings()
   const [platform, setPlatform] = useState<Platform | null>(null)
-  const transition = useSpringTransition('default')
+  const transition = useSpringTransition()
 
   return (
     <div className="bb-guide">
@@ -184,7 +184,7 @@ function CodeRow({ value }: { value: string }) {
 function GifToggle({ name }: { name: string }) {
   const strings = useStrings()
   const [open, setOpen] = useState(false)
-  const transition = useSpringTransition('default')
+  const transition = useSpringTransition()
 
   return (
     <div className="bb-guide__gif">

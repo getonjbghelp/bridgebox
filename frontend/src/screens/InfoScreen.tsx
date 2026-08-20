@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { BrandLogo } from '../components/BrandLogo'
 import { Modal } from '../components/Modal'
 import { PeopleCredits } from '../components/PeopleCredits'
+import { ThirdPartyLicenses } from '../components/ThirdPartyLicenses'
 import { Section, Row } from '../components/Section'
 import { LINK_ICONS } from '../components/icons'
 import { ABOUT, aboutText, localeText, type AboutLink } from '../lib/content'
@@ -18,8 +19,6 @@ interface AppInfo {
   /** "b1" while pre-release, "" once a final version ships - same source
    *  BetaBadge reads, never duplicated here. */
   label: string
-  /** Empty for an ordinary checkout or build. */
-  channel: string
 }
 
 interface IntegrityStatus {
@@ -95,12 +94,7 @@ export function InfoScreen() {
           label={strings.info.licenseLabel}
           control={<span className="text-caption">{about.license.name}</span>}
         />
-        {info?.channel && (
-          <Row
-            label={strings.info.sourceLabel}
-            control={<span className="text-caption">{strings.info.sourcePublic}</span>}
-          />
-        )}
+        <ThirdPartyLicenses />
       </Section>
       <p className="text-caption bb-info__license-text">{renderRich(about.license.text)}</p>
 

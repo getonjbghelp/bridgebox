@@ -104,6 +104,14 @@
     "purpose": "Monospace typeface (addresses, ports, log lines, timings), vendored as a Latin+Cyrillic subset in frontend/src/assets/fonts/"
   },
   {
+    "name": "PyInstaller",
+    "author": "PyInstaller Development Team",
+    "author_url": "https://github.com/pyinstaller",
+    "project_url": "https://github.com/pyinstaller/pyinstaller",
+    "license": "GPL-2.0-or-later (with an exception for programs it builds)",
+    "purpose": "Packages the backend into the portable .exe for release - its bootloader is embedded in the resulting binary; BridgeBox's own code is not covered by this license"
+  },
+  {
     "name": "johnbox",
     "author": "InvoxiPlayGames",
     "author_url": "https://github.com/InvoxiPlayGames",

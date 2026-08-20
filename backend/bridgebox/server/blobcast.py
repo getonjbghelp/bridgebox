@@ -40,7 +40,7 @@ import re
 
 from aiohttp import web
 
-from .guard import MIDDLEWARES
+from .guard import build_guard_middlewares
 from .relay import relay
 from .rooms import (
     FALLBACK_USER_AGENT,
@@ -394,9 +394,18 @@ def build_socketio_app(
     # SECURITY FIX (H1). This site is the second half of the attack the guard
     # closes: a page primed sessions.upstream with a cross-origin GET /room on
     # the main port, then opened a WebSocket here and got a tunnel to Jackbox
-    # through the victim's machine. Same middleware as the main app - the port
-    # is different, the exposure is identical.
-    app = web.Application(middlewares=list(MIDDLEWARES))
+    # through the victim's machine.
+    #
+    # SECURITY FIX (remote token leak): NOT the main app's permissive
+    # MIDDLEWARES. This site has no page-serving branch - `handle` below
+    # forwards any non-WS request straight to Jackbox - so the navigation
+    # exemption guard.MIDDLEWARES relies on forward_or_warn to make safe
+    # would have let an attacker-controlled top-level navigation
+    # (`window.location = ...`, no click required) reach Jackbox with the
+    # game's own identity, query string and all. exempt_navigation=False
+    # refuses every browser-shaped request here outright; the real game sends
+    # no Sec-Fetch-* at all, so it is unaffected.
+    app = web.Application(middlewares=list(build_guard_middlewares(exempt_navigation=False)))
     app.router.add_route("*", "/{tail:.*}", handle)
     return app
 

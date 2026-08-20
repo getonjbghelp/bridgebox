@@ -116,6 +116,57 @@ async def test_a_page_cannot_proxy_a_request_to_jackbox():
     assert body["ok"] is False
 
 
+async def test_h2_stays_closed_for_an_object_or_embed_style_navigation():
+    """SECURITY FIX for a gap between two different tests the code used to run.
+
+    guard.is_top_level_navigation exempts a request from the block if EITHER
+    Sec-Fetch-Mode == "navigate" OR Sec-Fetch-Dest == "document" - and per the
+    Fetch Metadata spec, an `<object data=...>` or `<embed src=...>` load is a
+    real, browser-set Sec-Fetch-Mode: navigate with Sec-Fetch-Dest: object (or
+    embed), NOT "document". That alone is enough to pass the guard.
+
+    factory.forward_or_warn used to decide whether to answer with a page
+    (never forwarding) using a DIFFERENT test: wants_html(), which only
+    looked at Accept containing "text/html". An object/embed load's Accept
+    header is not required to contain text/html - browsers do not always
+    send it there, since the destination can be arbitrary content, not
+    necessarily HTML. So a request could satisfy "is a navigation" (passing
+    the guard) while failing "wants html" (skipping the page-only branch) at
+    the same time, and fall straight through into api_handler - upstream,
+    exactly like the plain H2 case this file already pins.
+
+    Fixed by making forward_or_warn's page branch fire on
+    is_top_level_navigation() too, not only wants_html() - the same
+    predicate the guard itself exempts on, so nothing the guard lets through
+    as "a navigation" can ever reach a forwarding branch. Headers here match
+    the Fetch Metadata spec's per-destination values for an object/embed
+    load; whether Chrome's actual Accept header for every such load excludes
+    text/html in every version is a separate question from the code-level
+    gap this test pins, which is closed regardless."""
+    upstream = FakeUpstream()
+    app = build_full_app(
+        host="127.0.0.1", port=8443, http_client=upstream, ws_connector=FakeWsConnector()
+    )
+    client = await _client(app)
+    try:
+        response = await client.post(
+            "/api/v2/rooms",
+            json={"apptag": "fourbage"},
+            headers={
+                "Origin": "https://evil.example.com",
+                "Sec-Fetch-Site": "cross-site",
+                "Sec-Fetch-Mode": "navigate",
+                "Sec-Fetch-Dest": "embed",
+                "Accept": "*/*",
+            },
+        )
+    finally:
+        await client.close()
+
+    assert upstream.calls == [], "an embed/object-shaped navigation must never reach Jackbox"
+    assert response.status == 403
+
+
 async def test_the_game_is_not_affected():
     """The failure that would matter most. The game is libcurl and sends no
     fetch metadata, so it must pass through untouched."""
@@ -278,6 +329,48 @@ async def test_a_page_cannot_open_the_blobcast_tunnel():
     assert connector.connected_url is None, "a tunnel to Jackbox was opened"
 
 
+async def test_a_page_navigation_to_the_socketio_port_is_refused_not_forwarded():
+    """SECURITY FIX for a break in the invariant guard.is_top_level_navigation's
+    docstring states as the whole justification for exempting navigations
+    from the block:
+
+        "a navigation is answered by factory.forward_or_warn with a page ...
+        and is NEVER forwarded upstream. That behaviour is what makes the
+        exemption free, so it must not be relaxed without revisiting this."
+
+    That promise is kept by factory.forward_or_warn (main app), which checks
+    wants_html() and answers with a page before anything could be forwarded.
+    build_socketio_app has no page to serve at all - its `handle` forwards
+    any non-WS request straight to the real Jackbox upstream - so it used to
+    reuse the main app's permissive middleware anyway and let an exempted
+    navigation (`window.location = ...`, a clicked link, or an
+    auto-submitting <form> - no user gesture required) reach Jackbox under
+    the game's identity, attacker-chosen path and query string included
+    (exactly where the room's accessToken travels).
+
+    Fixed by building this site's middleware with
+    guard.build_guard_middlewares(exempt_navigation=False): a browser-shaped
+    request is refused outright here, navigation or not, because this port
+    has no safe way to answer one with anything but a refusal. Severity of
+    the original gap: remote / triggerable by any page open in the user's
+    browser while a Party Pack 1-6 game is active; no user interaction beyond
+    having the page loaded."""
+    sessions = BlobcastSessions()
+    sessions.remember("ecast-prod-use2.jackboxgames.com")
+    upstream = FakeUpstream(body=b"<html>whatever jackbox answered</html>")
+    app = build_socketio_app(sessions, upstream, FakeWsConnector(), port=38203)
+    client = await _client(app)
+    try:
+        response = await client.get(
+            "/accessToken?code=ABCD&secret=whatever", headers=BROWSER_NAVIGATION
+        )
+    finally:
+        await client.close()
+
+    assert upstream.calls == [], "a browser navigation must never reach Jackbox - see the guard module docstring"
+    assert response.status == 403
+
+
 async def test_a_page_cannot_prime_the_blobcast_session():
     """The first half of the same chain: without this, a page could point the
     socket.io listener at any host the upstream names, just by making the
@@ -357,7 +450,12 @@ def test_a_navigation_is_recognised_by_either_signal():
 def test_every_app_this_project_serves_carries_the_guard(builder):
     """The structural half. Both sites are reachable from a browser, and a new
     one added later without the middleware would reopen the hole silently -
-    exactly the "one more call site forgot" shape the token leak had."""
+    exactly the "one more call site forgot" shape the token leak had.
+
+    Checked by name, not identity: build_guard_middlewares is a factory now
+    (see its docstring - the socket.io site needs a stricter,
+    exempt_navigation=False instance), so each app's middleware is its own
+    closure rather than one shared function object."""
     app = builder()
 
-    assert guard.refuse_browser_initiated in app.middlewares
+    assert any(getattr(mw, "__name__", "") == "refuse_browser_initiated" for mw in app.middlewares)

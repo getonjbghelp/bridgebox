@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import html
 import json
 import logging
 import time
@@ -150,7 +151,6 @@ async def run_strategy_suite(
     switch: SwitchFn,
     session_factory,
     targets: list[tuple[str, str]] = ECAST_TARGETS,
-    skip_heavy: bool = False,
     settle_s: float = STRATEGY_SETTLE_S,
     on_result: Callable[[dict], None] | None = None,
 ) -> list[dict]:
@@ -166,7 +166,11 @@ async def run_strategy_suite(
 
     Cancellation (user closes the popup) propagates out of the awaits here;
     stopping Zapret afterwards is the caller's job, since only the caller
-    knows what should be running once the test is over."""
+    knows what should be running once the test is over.
+
+    `strategies` arrives pre-filtered - "Тестировать всё"/skip_heavy is
+    decided once, by desktop.Api.test_strategies before it ever calls in
+    here, not re-decided per stage."""
     results: list[dict] = []
 
     def record(entry: dict) -> None:
@@ -174,11 +178,10 @@ async def run_strategy_suite(
         if on_result is not None:
             on_result(entry)
 
-    queued = [s for s in strategies if not (skip_heavy and s.group == "Прочие")]
+    queued = list(strategies)
     logger.info(
-        "strategy suite: %d strategies to test (skip_heavy=%s, settle=%.1fs, targets=%s)",
+        "strategy suite: %d strategies to test (settle=%.1fs, targets=%s)",
         len(queued),
-        skip_heavy,
         settle_s,
         ", ".join(name for name, _ in targets),
     )
@@ -280,12 +283,7 @@ def render_strategy_results_json(results: list[dict]) -> str:
 
 
 def _html_escape(text: str) -> str:
-    return (
-        text.replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-        .replace('"', "&quot;")
-    )
+    return html.escape(text, quote=True)
 
 
 def render_strategy_results_html(results: list[dict]) -> str:

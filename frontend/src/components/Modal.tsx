@@ -21,7 +21,7 @@ interface ModalProps {
  */
 export function Modal({ title, onClose, children, maxWidth = 480 }: ModalProps) {
   const strings = useStrings()
-  const transition = useSpringTransition('default')
+  const transition = useSpringTransition()
   const ref = useRef<HTMLDialogElement>(null)
   const titleId = useId()
 

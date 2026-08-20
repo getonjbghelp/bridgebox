@@ -123,6 +123,26 @@ class UpdateConfig(BaseModel):
     check_on_startup: bool = False
 
 
+class AppUpdateConfig(BaseModel):
+    """Checking GitHub for a newer BridgeBox release - see app_update.py.
+
+    On by default, unlike UpdateConfig above: that one is a convenience
+    check for an optional payload, this one is how a security-critical fix
+    (see app_update.CRITICAL_MARKER) reaches somebody who never opens
+    Settings. It is also never blocking (see desktop.Api.
+    start_app_update_check's startup delay), so "on by default" costs an
+    unreachable GitHub nothing but a silently failed background request."""
+
+    check_on_startup: bool = True
+    # The last version whose update modal the user has already seen and
+    # closed - suppresses the MODAL for that version on future launches so
+    # it does not nag every time. Deliberately does NOT gate the critical
+    # banner/reminder (see HomeScreen's UpdateBanner): a critical release
+    # must not become permanently silenceable by a single click, which is
+    # the whole point of calling it critical.
+    dismissed_version: str = ""
+
+
 class LoggingConfig(BaseModel):
     level: Literal["debug", "info", "warning", "error"] = "info"
     dir: str = "logs/"
@@ -571,6 +591,7 @@ class Config(BaseModel):
     ui: UiConfig = Field(default_factory=UiConfig)
     paths: PathsConfig = Field(default_factory=PathsConfig)
     update: UpdateConfig = Field(default_factory=UpdateConfig)
+    app_update: AppUpdateConfig = Field(default_factory=AppUpdateConfig)
     proxy: ProxyConfig = Field(default_factory=ProxyConfig)
     profiles: ProfilesConfig = Field(default_factory=ProfilesConfig)
     rewrite: RewriteConfig = Field(default_factory=RewriteConfig)
@@ -716,3 +737,59 @@ def save_config(config: Config, path: str | Path) -> None:
     tmp.replace(path)
     logger.info("saved config to %s", path)
     logger.debug("saved config contents: %s", config.model_dump())
+
+
+def _fill_missing_defaults(raw: dict, defaults: dict) -> tuple[dict, bool]:
+    """Adds any key `defaults` has that `raw` is missing, recursively through
+    nested sections, and never touches a key `raw` already has - even one
+    set to None, [], or {}, since those are a deliberate choice (None in
+    particular is this app's own "reset this section" convention - see
+    update_config's _deep_merge) and not the same thing as "missing".
+
+    Returns the merged dict and whether anything was actually added, so a
+    caller writing the result back to disk can skip that write when a
+    version bump added no new config fields."""
+    changed = False
+    merged = dict(raw)
+    for key, default_value in defaults.items():
+        if key not in merged:
+            merged[key] = default_value
+            changed = True
+            continue
+        if isinstance(default_value, dict) and isinstance(merged[key], dict):
+            merged[key], nested_changed = _fill_missing_defaults(merged[key], default_value)
+            changed = changed or nested_changed
+    return merged, changed
+
+
+def migrate_config_file(path: str | Path) -> bool:
+    """Add any config field a newer BridgeBox version introduced to an
+    EXISTING config.yaml, without touching a single value the user already
+    set. Called once at startup, after load_config.
+
+    This is the other half of "installing a new version must not reset the
+    user's settings": load_config already defaults a field missing from the
+    file in MEMORY (pydantic does that for free), so nothing was ever at
+    risk of silently reverting - what was missing, until this, was the new
+    field showing up in the FILE ITSELF for a user who edits it by hand or
+    diffs it against a backup.
+
+    A config.yaml that does not exist yet is left alone and NOT created here
+    - this app ships with none (see save_config's docstring), and creating
+    one on a machine that has never changed a setting would be new,
+    unrequested behaviour. Returns whether anything was written, purely so a
+    caller can log it; nothing depends on the return value."""
+    path = Path(path)
+    if not path.exists():
+        return False
+
+    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    merged, changed = _fill_missing_defaults(raw, Config().model_dump())
+    if not changed:
+        return False
+
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(yaml.safe_dump(merged, sort_keys=False), encoding="utf-8")
+    tmp.replace(path)
+    logger.info("added new default config fields to %s", path)
+    return True

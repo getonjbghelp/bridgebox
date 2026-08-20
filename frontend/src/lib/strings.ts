@@ -13,7 +13,7 @@ export function useStrings() {
   return CATALOGS[locale]
 }
 
-/** Fills {placeholders} in a strings catalog value: t(strings.home.thanksTicker, { author }). */
+/** Fills {placeholders} in a strings catalog value: t(strings.home.zapretUpdateAvailable, { latest }). */
 export function t(template: string, vars?: Record<string, string | number>): string {
   if (!vars) return template
   return template.replace(/\{(\w+)\}/g, (match, key) =>

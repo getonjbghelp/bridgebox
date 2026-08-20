@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 import json
 import threading
 from collections import deque
@@ -93,13 +94,7 @@ def render_log_json(lines: list[dict]) -> str:
 
 
 def _escape(text: str) -> str:
-    return (
-        str(text)
-        .replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-        .replace('"', "&quot;")
-    )
+    return html.escape(text, quote=True)
 
 
 def render_log_html(lines: list[dict]) -> str:

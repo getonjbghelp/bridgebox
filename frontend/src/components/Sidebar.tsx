@@ -39,7 +39,7 @@ export function Sidebar({
   const NAV_ITEMS = navItems(strings)
   // Was a hardcoded spring, so the sliding pill kept animating after the user
   // turned animations off.
-  const pillTransition = useSpringTransition('default')
+  const pillTransition = useSpringTransition()
   const { sidebarCollapsed, setSidebarCollapsed } = useMotionPrefs()
   const [bugReportOpen, setBugReportOpen] = useState(false)
 
