@@ -97,6 +97,12 @@ export function InfoScreen() {
           control={<span className="text-caption">{about.license.name}</span>}
         />
         <ThirdPartyLicenses />
+        {info?.channel && (
+          <Row
+            label={strings.info.sourceLabel}
+            control={<span className="text-caption">{strings.info.sourcePublic}</span>}
+          />
+        )}
       </Section>
       <p className="text-caption bb-info__license-text">{renderRich(about.license.text)}</p>
 

@@ -347,6 +347,8 @@
     "thirdPartyHint": "Библиотеки и утилиты, из которых собран BridgeBox",
     "thirdPartyButton": "Показать список",
     "thirdPartyModalTitle": "Стороннее ПО и лицензии",
+    "sourceLabel": "Источник",
+    "sourcePublic": "Официальный репозиторий GitHub",
     "linksTitle": "Ссылки",
     "peopleTitle": "Благодарности",
     "peopleTabDonators": "Донатеры",

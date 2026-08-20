@@ -113,3 +113,18 @@ def display_version(version_string: str | None = None) -> str:
     if not parts:
         return ""
     return ".".join(parts[:3])
+
+
+def build_channel() -> str:
+    """Empty for a normal checkout or build. tools/build_portable.py (the
+    public repo's own copy - see its _pyproject_for_build) stamps a
+    `[tool.bridgebox] channel = "public"` line into the bundled pyproject.toml
+    only when the build machine's git remote is the real public repo, so this
+    is non-empty exactly for an exe built from a public GitHub clone - never
+    for an official release build or a source checkout. Read path mirrors
+    app_version's own _pyproject_text/_from_pyproject split."""
+    text = _pyproject_text()
+    if text is None:
+        return ""
+    match = _PYPROJECT_CHANNEL_RE.search(text)
+    return match.group(1) if match else ""

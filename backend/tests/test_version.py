@@ -46,3 +46,17 @@ def test_the_shipped_version_is_a_beta():
     assert version_mod.release_label() == "b1"
 
 
+def test_build_channel_reads_an_optional_pyproject_field(monkeypatch):
+    monkeypatch.setattr(
+        version_mod, "_pyproject_text",
+        lambda: 'version = "0.1.1b1"\n[tool.bridgebox]\nchannel = "public"\n',
+    )
+    assert version_mod.build_channel() == "public"
+
+
+def test_build_channel_is_empty_by_default():
+    """This checkout's own pyproject.toml carries no `channel` line - only
+    tools/build_portable.py's public-repo copy adds one, and only when
+    building from a clone whose git remote is the real public repo."""
+    assert version_mod.build_channel() == ""
+

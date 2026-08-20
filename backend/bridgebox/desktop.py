@@ -44,7 +44,7 @@ from .runtime import BridgeRuntime
 from .runtime_core import RuntimeCore
 from .server.rooms import redact, rewrite_server_field
 from .tls.ca import CA_CERT_FILENAME
-from .version import app_version, display_version, release_label
+from .version import app_version, build_channel, display_version, release_label
 from . import app_update
 from .window_chrome import THEMED_NONE, apply_titlebar_theme
 from .zapret.strategies import (
@@ -356,7 +356,7 @@ class Api:
         except Exception as exc:
             return {
                 "ok": False, "error": describe_exception(exc),
-                "version": "", "label": "",
+                "version": "", "label": "", "channel": "",
             }
 
     def get_autostart(self) -> dict:

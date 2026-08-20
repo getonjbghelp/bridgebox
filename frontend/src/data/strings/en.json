@@ -347,6 +347,8 @@
     "thirdPartyHint": "The libraries and tools BridgeBox is built on",
     "thirdPartyButton": "Show list",
     "thirdPartyModalTitle": "Third-party software and licenses",
+    "sourceLabel": "Source",
+    "sourcePublic": "Official GitHub repository",
     "linksTitle": "Links",
     "peopleTitle": "Thanks",
     "peopleTabDonators": "Donators",
