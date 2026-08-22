@@ -19,9 +19,9 @@ body:
       label: "Какую проблему это решает? / What problem does this solve?"
       description: >
         Опишите ситуацию, а не сразу решение — иногда для одной проблемы находится
-        решение попроще того, что предлагаете вы. / Describe the situation, not
+        решение попроще того, что предлагаете вы. Не гарантировано, что ваша идея попадёт в программу / Describe the situation, not
         just the fix - sometimes a simpler solution than the one you have in mind
-        turns out to fit better.
+        turns out to fit better. There is no guarantee that your idea will be included in the program.
     validations:
       required: true
 
