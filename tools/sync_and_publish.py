@@ -31,7 +31,7 @@ EXCLUDE_DIRS = [
     "scuba",
 ]
 EXCLUDE_FILES = [
-    "config.yaml", "baseline.json", "HANDOFF-*.md",
+    "config.yaml", "baseline.json", "steam_launch_backup.json", "other_launch_backup.json", "HANDOFF-*.md",
     "ОБЪЯСНЕНИЕ_ФАЙЛОВ.txt", "cmd.exe",
     # Chat moderation notes, not project source - no reason a GitHub visitor
     # needs these.

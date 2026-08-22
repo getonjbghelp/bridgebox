@@ -14,6 +14,19 @@
         "ru": "Выявил самый первый баг (с дефектом хедера окна)",
         "en": "He identified the very first bug (with a defect in the window header)."
       }
+    },
+    {
+      "id": "qeweler",
+      "name": "qeweler",
+      "tested": {
+        "ru": "Работу BridgeBox на Tiny10 (облегчённом дистрибутиве Windows 10)",
+        "en": "Whether BridgeBox works on Tiny10 (a lightweight Windows 10 distribution)."
+      },
+      "environment": "Tiny10, AMD A4-3300, 4gb RAM, AMD Radeon Graphics 6410d, Asrock A75M-HVS, HDD 500gb, PSU 400W",
+      "contribution": {
+        "ru": "Проверил, работает ли программа на лёгких дистрибутивах Windows 10",
+        "en": "Checked whether the program works on lightweight Windows 10 distributions."
+      }
     }
   ]
 }

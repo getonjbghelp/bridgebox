@@ -12,6 +12,7 @@ interface ButtonProps {
   fullWidth?: boolean
   title?: string
   ariaLabel?: string
+  className?: string
 }
 
 export function Button({
@@ -23,6 +24,7 @@ export function Button({
   fullWidth,
   title,
   ariaLabel,
+  className,
 }: ButtonProps) {
   // The tap scale used to run unconditionally, so turning animations off in
   // Settings left it going - the one motion in the app the switch missed.
@@ -31,7 +33,7 @@ export function Button({
   return (
     <motion.button
       type={type}
-      className={`bb-button bb-button--${variant}${fullWidth ? ' bb-button--full' : ''}`}
+      className={`bb-button bb-button--${variant}${fullWidth ? ' bb-button--full' : ''}${className ? ` ${className}` : ''}`}
       onClick={onClick}
       disabled={disabled}
       title={title}

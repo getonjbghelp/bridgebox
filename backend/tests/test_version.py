@@ -18,11 +18,30 @@ def test_a_final_release_has_no_label_so_the_badge_disappears():
     assert version_mod.release_label("1.2.3") == ""
 
 
-def test_pyproject_wins_over_installed_metadata():
+def test_pyproject_wins_over_installed_metadata(monkeypatch):
     """Measured, not assumed: `pip install -e .` records the version at install
     time, so an editable checkout kept reporting "0.1.0" while pyproject
-    already said "0.1.0b1". The file the developer edits has to win."""
-    assert version_mod.app_version() == "0.1.2b1"
+    already said "0.1.0b1". The file the developer edits has to win.
+
+    The contrast is forced rather than borrowed from whatever this checkout
+    happens to have installed: the two agreeing (which they do right after a
+    fresh `pip install -e .`) would make this pass without proving the
+    ordering at all. The expected value is read from pyproject.toml too, so
+    a version bump does not break this test - it used to hard-code the
+    number and failed on the 0.1.2b1 -> 0.1.3b1 bump."""
+    import re
+    from pathlib import Path
+
+    pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
+    expected = re.search(
+        r'^\s*version\s*=\s*"([^"]+)"', pyproject.read_text(encoding="utf-8"), re.MULTILINE
+    ).group(1)
+
+    monkeypatch.setattr(
+        "importlib.metadata.version", lambda name: "9.9.9-from-installed-metadata"
+    )
+
+    assert version_mod.app_version() == expected
 
 
 def test_display_version_keeps_the_patch_component():

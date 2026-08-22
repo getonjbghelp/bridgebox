@@ -4,6 +4,7 @@ import asyncio
 import ctypes
 import json
 import logging
+import os
 import subprocess
 import sys
 import tempfile
@@ -43,6 +44,8 @@ from .profiles_io import export_payload, import_payload
 from .runtime import BridgeRuntime
 from .runtime_core import RuntimeCore
 from .server.rooms import redact, rewrite_server_field
+from . import other_launch
+from . import steam_launch
 from .tls.ca import CA_CERT_FILENAME
 from .version import app_version, build_channel, display_version, release_label
 from . import app_update
@@ -71,6 +74,20 @@ DEV_SERVER_URL = "http://localhost:5173"
 # exercise the room-create + room-lookup round trip; test_connection stops
 # there and does not attempt a WS relay connect (see _test_connection_coro).
 TEST_APPTAG = "fourbage"
+
+# steam_launch.quit_steam's own worst case: a `-shutdown` subprocess call, a
+# poll loop that runs up to _GRACEFUL_QUIT_TIMEOUT_S, and a forced `taskkill`
+# call - each of those subprocess calls has its own 10s timeout - before the
+# file is ever touched. Derived from the module's own constant (times 3 for
+# the three subprocess timeouts, plus real margin) rather than a bare magic
+# number, so the two can't silently drift apart again: a `timeout=30` here
+# used to let the Api layer report failure while quit_steam kept running in
+# the background and the file still got rewritten underneath the user.
+STEAM_LAUNCH_API_TIMEOUT_S = steam_launch._GRACEFUL_QUIT_TIMEOUT_S * 3 + 60
+
+# No process to close first (unlike Steam) - patching a handful of files/
+# shortcuts via COM is a matter of seconds even on a slow disk.
+OTHER_LAUNCH_API_TIMEOUT_S = 60
 
 # How long the STARTUP-triggered network checks (zapret's update check, the
 # app's own update check) wait before actually reaching GitHub. Windows starts
@@ -104,6 +121,39 @@ BOOT_BACKGROUND_DARK = "#0a0f1e"
 
 def _boot_background_color(theme: str) -> str:
     return BOOT_BACKGROUND_DARK if theme == "dark" else BOOT_BACKGROUND_LIGHT
+
+
+# PyInstaller's onefile bootloader hands these to the Python stage it starts,
+# and they mean "the archive is already unpacked, reuse that directory instead
+# of unpacking again". Passing them on to a NEW copy of the app is what breaks:
+# the restarted instance skips extraction and runs out of the OLD process's
+# temp directory, which that process then deletes on its way out. Whatever was
+# already loaded into memory (the .pyds, the Python runtime) keeps working, so
+# the window still opens - but every file read AFTER that point misses.
+# The symptom this was found from: a restart (factory reset, or the wizard's
+# own finish step) left the app reporting version 0.0.0 and offering an
+# "update" to the version it was already running, because BOTH sources
+# version.app_version() reads - the bundled pyproject.toml and the bundled
+# package metadata - had been deleted out from under it.
+_PYI_ONEFILE_HANDOFF_VARS = (
+    "_PYI_APPLICATION_HOME_DIR",
+    "_PYI_ARCHIVE_FILE",
+    "_PYI_PARENT_PROCESS_LEVEL",
+    # Pre-6.0 bootloaders used this name for the same handoff. Harmless to
+    # clear on a build that no longer sets it.
+    "_MEIPASS2",
+)
+
+
+def _restart_environment() -> dict[str, str]:
+    """This process's environment minus PyInstaller's onefile handoff vars,
+    so a relaunched copy unpacks its own archive instead of borrowing this
+    one's - see _PYI_ONEFILE_HANDOFF_VARS. A source checkout has none of
+    these set, so this is a plain copy of os.environ there."""
+    env = os.environ.copy()
+    for name in _PYI_ONEFILE_HANDOFF_VARS:
+        env.pop(name, None)
+    return env
 
 
 def is_admin() -> bool:
@@ -224,6 +274,27 @@ class Api:
         # Filled by main() once the startup check has run; None means it
         # has not, which reads as "nothing to report" rather than a scare.
         self._integrity = None
+        # Guards apply_steam_launch_options/revert_steam_launch_options
+        # against a second call while one is still closing/rewriting/
+        # reopening Steam - the "applying" modal's native <dialog> can be
+        # Escape-dismissed back to idle mid-operation, and two concurrent
+        # runs against the same file and backup store would race. A bare
+        # bool (no lock) is enough: the realistic trigger is a human
+        # double-click/Escape-then-reclick, not a tight race, and the whole
+        # operation this guards is itself many seconds long - see
+        # _update_lock above for the fuller-lock version used elsewhere,
+        # kept simple here on purpose.
+        self._steam_launch_busy: bool = False
+        # Steam's scan is synchronous (a few small VDF reads) - the "Прочие
+        # копии" scan walks every local drive, which can take minutes, so it
+        # needs the same submit-and-poll job shape as test_strategies rather
+        # than a plain blocking call.
+        self._other_scan_future = None
+        self._other_scan_lock = threading.Lock()
+        self._other_scan_progress: dict = {"foldersChecked": 0}
+        # Guards apply_other_launch_options/revert_other_launch_options the
+        # same way _steam_launch_busy guards the Steam equivalents.
+        self._other_launch_busy: bool = False
 
     def attach_window(self, window) -> None:
         """Hand the pywebview window to Api after create_window().
@@ -877,25 +948,48 @@ class Api:
             }
         stage_path = app_update.stage_path_for(exe_path)
         try:
+            archive_path: Path | None = None
             async with aiohttp.ClientSession() as session:
                 release = await app_update.fetch_latest_release(session)
-                if not release.exe_url:
+                if not release.asset_url:
                     raise RuntimeError(
-                        f"release {release.version} has no .exe asset to self-update from"
+                        f"release {release.version} ships neither a .exe nor a "
+                        "portable .zip to self-update from"
                     )
-                await app_update.download_exe(session, release.exe_url, stage_path)
+                if release.asset_is_archive:
+                    # The archive is a throwaway, so it goes to the temp
+                    # folder. The exe it holds does NOT: replace_running_exe
+                    # renames files past each other, which only works within
+                    # one volume, and temp is routinely on a different drive
+                    # than the app - so the exe is unpacked straight to
+                    # stage_path, next to the binary it will replace.
+                    archive_path = self._temp_root() / f"BridgeBox-{release.version}.zip"
+                    download_target = archive_path
+                else:
+                    download_target = stage_path
+                await app_update.download_exe(session, release.asset_url, download_target)
             try:
                 # Runs before the swap, not after: the downloaded bytes get
                 # one chance to prove they are what GitHub actually shipped,
                 # and a mismatch must never become the app's own running
                 # binary - see app_update.verify_exe_digest's own docstring
                 # for what this does and does not protect against.
+                # Checked against whatever GitHub actually published, which
+                # for an archive is the archive - the exe inside inherits
+                # that, since it comes out of bytes already proven intact.
                 await asyncio.to_thread(
-                    app_update.verify_exe_digest, stage_path, release.exe_digest
+                    app_update.verify_exe_digest, download_target, release.asset_digest
                 )
+                if archive_path is not None:
+                    await asyncio.to_thread(
+                        app_update.extract_exe_from_archive, archive_path, stage_path
+                    )
             except Exception:
                 stage_path.unlink(missing_ok=True)
                 raise
+            finally:
+                if archive_path is not None:
+                    archive_path.unlink(missing_ok=True)
             await asyncio.to_thread(app_update.replace_running_exe, stage_path, exe_path)
         except Exception as exc:
             return {"ok": False, "error": describe_exception(exc), "version": None}
@@ -1091,6 +1185,7 @@ class Api:
             subprocess.Popen(
                 command,
                 cwd=str(self._project_root),
+                env=_restart_environment(),
                 creationflags=getattr(subprocess, "DETACHED_PROCESS", 0)
                 | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
             )
@@ -1101,6 +1196,215 @@ class Api:
         except Exception as exc:
             logger.exception("restart failed")
             return {"ok": False, "error": describe_exception(exc)}
+
+    # ---- Steam launch options ----
+
+    def scan_steam_games(self) -> dict:
+        """Read-only, safe to call any time - powers the auto-configure
+        checklist in ConnectGuide. Only returns titles that already have an
+        appid block in localconfig.vdf (see steam_launch.filter_configurable_games)
+        - a title Steam has never launched is excluded, not auto-created.
+
+        "reason" distinguishes the three ways "games" can come back empty -
+        Steam not installed, no resolvable active account, or Steam/account
+        both fine and there just aren't any eligible titles - so the
+        frontend isn't stuck showing "try launching the game once" advice
+        for the first two, genuinely different, situations."""
+        lang = self.current_language()
+        try:
+            steam_path = steam_launch.find_steam_path()
+            if steam_path is None:
+                return {"ok": True, "error": None, "games": [], "reason": i18n.t("steam.not_found", lang)}
+            games = steam_launch.scan_installed_jackbox_games(steam_path)
+            config_path = steam_launch.find_active_local_config(steam_path)
+            if config_path is None:
+                return {"ok": True, "error": None, "games": [], "reason": i18n.t("steam.no_active_account", lang)}
+            games = steam_launch.filter_configurable_games(config_path, games)
+            backups = steam_launch.load_backups(self._project_root)
+            return {
+                "ok": True, "error": None, "reason": None,
+                "games": [
+                    {"appid": g.appid, "name": g.name, "hasBackup": g.appid in backups}
+                    for g in games
+                ],
+            }
+        except Exception as exc:
+            return {"ok": False, "error": describe_exception(exc), "games": [], "reason": None}
+
+    def _localize_steam_result(self, result: dict) -> dict:
+        """steam_launch's orchestration functions return error CODES, not
+        text - this is the one place that maps them through i18n.t(), same
+        separation the diag.* messages already use."""
+        lang = self.current_language()
+        if result.get("error"):
+            result = {**result, "error": i18n.t(f"steam.{result['error']}", lang)}
+        results = {
+            appid: (
+                {**per_game, "error": i18n.t(f"steam.{per_game['error']}", lang)}
+                if per_game.get("error") else per_game
+            )
+            for appid, per_game in result.get("results", {}).items()
+        }
+        return {**result, "results": results}
+
+    async def _apply_steam_launch_options_coro(self, appids: list[str]) -> dict:
+        steam_path = steam_launch.find_steam_path()
+        if steam_path is None:
+            return {"ok": False, "error": "not_found", "results": {}, "steamRelaunched": False}
+        return await asyncio.to_thread(
+            steam_launch.apply_launch_options,
+            steam_path, self._project_root, appids, self._config.server.port,
+        )
+
+    def apply_steam_launch_options(self, appids: list[str]) -> dict:
+        if self._steam_launch_busy:
+            return {
+                "ok": False,
+                "error": i18n.t("steam.already_running", self.current_language()),
+                "results": {},
+                "steamRelaunched": False,
+            }
+        self._steam_launch_busy = True
+        try:
+            result = self._runtime.run(
+                lambda: self._apply_steam_launch_options_coro(appids),
+                timeout=STEAM_LAUNCH_API_TIMEOUT_S,
+            )
+        except Exception as exc:
+            return {"ok": False, "error": describe_exception(exc), "results": {}, "steamRelaunched": False}
+        finally:
+            self._steam_launch_busy = False
+        return self._localize_steam_result(result)
+
+    async def _revert_steam_launch_options_coro(self, appids: list[str]) -> dict:
+        steam_path = steam_launch.find_steam_path()
+        if steam_path is None:
+            return {"ok": False, "error": "not_found", "results": {}, "steamRelaunched": False}
+        return await asyncio.to_thread(
+            steam_launch.revert_launch_options, steam_path, self._project_root, appids,
+        )
+
+    def revert_steam_launch_options(self, appids: list[str]) -> dict:
+        if self._steam_launch_busy:
+            return {
+                "ok": False,
+                "error": i18n.t("steam.already_running", self.current_language()),
+                "results": {},
+                "steamRelaunched": False,
+            }
+        self._steam_launch_busy = True
+        try:
+            result = self._runtime.run(
+                lambda: self._revert_steam_launch_options_coro(appids),
+                timeout=STEAM_LAUNCH_API_TIMEOUT_S,
+            )
+        except Exception as exc:
+            return {"ok": False, "error": describe_exception(exc), "results": {}, "steamRelaunched": False}
+        finally:
+            self._steam_launch_busy = False
+        return self._localize_steam_result(result)
+
+    # ---- Other-copies ("Прочие копии") launch options ----
+
+    def start_other_scan(self) -> dict:
+        """Kicks off the drive walk in the background and returns
+        immediately - see other_scan_progress. A full scan of every local
+        drive can take minutes, long enough that blocking the pywebview
+        call would hit its own timeout before finishing (same reasoning as
+        test_strategies)."""
+        with self._other_scan_lock:
+            if self._other_scan_future is not None and not self._other_scan_future.done():
+                return {"ok": False, "error": i18n.t("other.already_running", self.current_language())}
+            self._other_scan_progress = {"foldersChecked": 0}
+            self._other_scan_future = self._runtime.submit(self._other_scan_coro)
+        return {"ok": True, "error": None}
+
+    def _on_other_scan_progress(self, folders_checked: int) -> None:
+        self._other_scan_progress = {"foldersChecked": folders_checked}
+
+    async def _other_scan_coro(self) -> dict:
+        return await asyncio.to_thread(self._run_other_scan)
+
+    def _run_other_scan(self) -> dict:
+        drives = other_launch.list_fixed_drives()
+        candidates = other_launch.scan_for_other_copies(drives, progress_cb=self._on_other_scan_progress)
+        backups = other_launch.load_backups(self._project_root)
+        return {
+            "items": [
+                {"kind": c.kind, "path": c.path, "name": c.name, "hasBackup": c.path in backups}
+                for c in candidates
+            ],
+        }
+
+    def other_scan_progress(self) -> dict:
+        """Polled by the frontend after start_other_scan()."""
+        future = self._other_scan_future
+        progress = dict(self._other_scan_progress)
+        if future is None:
+            return {"started": False, "done": False, "ok": None, "error": None, "items": [], **progress}
+        if not future.done():
+            return {"started": True, "done": False, "ok": None, "error": None, "items": [], **progress}
+        try:
+            result = future.result()
+            return {"started": True, "done": True, "ok": True, "error": None, **result, **progress}
+        except Exception as exc:
+            return {"started": True, "done": True, "ok": False, "error": describe_exception(exc), "items": [], **progress}
+
+    def _localize_other_result(self, result: dict) -> dict:
+        """other_launch's orchestration functions return error CODES, not
+        text - same separation as _localize_steam_result. No top-level
+        result["error"] to translate here (unlike Steam's "could not close
+        Steam"/"no active account"): every failure this feature can hit is
+        specific to one item, so apply_launch_options/revert_launch_options
+        always return a top-level error of None and put the real code in
+        results[path]["error"] instead."""
+        lang = self.current_language()
+        results = {
+            path: (
+                {**per_item, "error": i18n.t(f"other.{per_item['error']}", lang)}
+                if per_item.get("error") else per_item
+            )
+            for path, per_item in result.get("results", {}).items()
+        }
+        return {**result, "results": results}
+
+    async def _apply_other_launch_options_coro(self, items: list[dict]) -> dict:
+        return await asyncio.to_thread(
+            other_launch.apply_launch_options, self._project_root, items, self._config.server.port,
+        )
+
+    def apply_other_launch_options(self, items: list[dict]) -> dict:
+        if self._other_launch_busy:
+            return {"ok": False, "error": i18n.t("other.already_running", self.current_language()), "results": {}}
+        self._other_launch_busy = True
+        try:
+            result = self._runtime.run(
+                lambda: self._apply_other_launch_options_coro(items),
+                timeout=OTHER_LAUNCH_API_TIMEOUT_S,
+            )
+        except Exception as exc:
+            return {"ok": False, "error": describe_exception(exc), "results": {}}
+        finally:
+            self._other_launch_busy = False
+        return self._localize_other_result(result)
+
+    async def _revert_other_launch_options_coro(self, items: list[dict]) -> dict:
+        return await asyncio.to_thread(other_launch.revert_launch_options, self._project_root, items)
+
+    def revert_other_launch_options(self, items: list[dict]) -> dict:
+        if self._other_launch_busy:
+            return {"ok": False, "error": i18n.t("other.already_running", self.current_language()), "results": {}}
+        self._other_launch_busy = True
+        try:
+            result = self._runtime.run(
+                lambda: self._revert_other_launch_options_coro(items),
+                timeout=OTHER_LAUNCH_API_TIMEOUT_S,
+            )
+        except Exception as exc:
+            return {"ok": False, "error": describe_exception(exc), "results": {}}
+        finally:
+            self._other_launch_busy = False
+        return self._localize_other_result(result)
 
     # ---- diagnostics ----
 

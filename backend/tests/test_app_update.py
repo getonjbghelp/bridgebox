@@ -149,8 +149,8 @@ async def test_fetch_latest_release_finds_the_exe_asset():
 
     release = await app_update.fetch_latest_release(session)
 
-    assert release.exe_url == "https://objects.githubusercontent.com/BridgeBox.exe"
-    assert release.exe_size == 42_000_000
+    assert release.asset_url == "https://objects.githubusercontent.com/BridgeBox.exe"
+    assert release.asset_size == 42_000_000
 
 
 async def test_fetch_latest_release_captures_the_exe_digest_when_present():
@@ -166,7 +166,7 @@ async def test_fetch_latest_release_captures_the_exe_digest_when_present():
 
     release = await app_update.fetch_latest_release(session)
 
-    assert release.exe_digest == "sha256:" + "a" * 64
+    assert release.asset_digest == "sha256:" + "a" * 64
 
 
 async def test_fetch_latest_release_exe_digest_is_none_on_an_asset_uploaded_before_it_existed():
@@ -181,16 +181,82 @@ async def test_fetch_latest_release_exe_digest_is_none_on_an_asset_uploaded_befo
 
     release = await app_update.fetch_latest_release(session)
 
-    assert release.exe_digest is None
+    assert release.asset_digest is None
 
 
-async def test_fetch_latest_release_has_no_exe_url_without_an_exe_asset():
-    session = _FakeSession(_release_payload(assets=[{"name": "source.zip"}]))
+async def test_fetch_latest_release_falls_back_to_the_portable_zip():
+    """Releases ship the portable .zip, not a bare .exe - the exe alone is
+    not a runnable BridgeBox (it needs zapret/ beside it), so a release
+    with no .exe asset is the normal case, not a broken one."""
+    session = _FakeSession(
+        _release_payload(
+            assets=[
+                {"name": "BridgeBox_Portable-v0.1.4.zip",
+                 "browser_download_url":
+                     "https://objects.githubusercontent.com/BridgeBox_Portable-v0.1.4.zip",
+                 "size": 60_000_000,
+                 "digest": "sha256:" + "b" * 64},
+            ]
+        )
+    )
 
     release = await app_update.fetch_latest_release(session)
 
-    assert release.exe_url is None
-    assert release.exe_size == 0
+    assert release.asset_url.endswith("BridgeBox_Portable-v0.1.4.zip")
+    assert release.asset_is_archive is True
+    assert release.asset_digest == "sha256:" + "b" * 64
+
+
+async def test_fetch_latest_release_prefers_a_bare_exe_over_the_zip():
+    """A .exe needs no unpacking, so it wins when a release carries both."""
+    session = _FakeSession(
+        _release_payload(
+            assets=[
+                {"name": "BridgeBox_Portable.zip",
+                 "browser_download_url":
+                     "https://objects.githubusercontent.com/BridgeBox_Portable.zip"},
+                {"name": "BridgeBox.exe",
+                 "browser_download_url":
+                     "https://objects.githubusercontent.com/BridgeBox.exe"},
+            ]
+        )
+    )
+
+    release = await app_update.fetch_latest_release(session)
+
+    assert release.asset_url.endswith("BridgeBox.exe")
+    assert release.asset_is_archive is False
+
+
+async def test_fetch_latest_release_picks_the_portable_zip_among_several():
+    """A release that also carries some other archive must not send the
+    updater after the wrong one."""
+    session = _FakeSession(
+        _release_payload(
+            assets=[
+                {"name": "strategies-backup.zip",
+                 "browser_download_url":
+                     "https://objects.githubusercontent.com/strategies-backup.zip"},
+                {"name": "BridgeBox_Portable-v0.1.4.zip",
+                 "browser_download_url":
+                     "https://objects.githubusercontent.com/BridgeBox_Portable-v0.1.4.zip"},
+            ]
+        )
+    )
+
+    release = await app_update.fetch_latest_release(session)
+
+    assert release.asset_url.endswith("BridgeBox_Portable-v0.1.4.zip")
+
+
+async def test_fetch_latest_release_has_no_asset_url_when_nothing_is_downloadable():
+    session = _FakeSession(_release_payload(assets=[{"name": "notes.txt"}]))
+
+    release = await app_update.fetch_latest_release(session)
+
+    assert release.asset_url is None
+    assert release.asset_size == 0
+    assert release.asset_is_archive is False
 
 
 async def test_fetch_latest_release_refuses_an_exe_asset_on_an_unexpected_host():
@@ -534,3 +600,74 @@ def test_running_exe_path_is_sys_executable_when_frozen(monkeypatch):
 
 def test_stage_path_for_appends_the_new_suffix():
     assert app_update.stage_path_for(Path("BridgeBox.exe")) == Path("BridgeBox.exe.new")
+
+
+# ---- extract_exe_from_archive ----------------------------------------------
+
+
+def _portable_zip(path: Path, *, members: dict[str, bytes]) -> Path:
+    import zipfile
+
+    with zipfile.ZipFile(path, "w") as bundle:
+        for name, data in members.items():
+            bundle.writestr(name, data)
+    return path
+
+
+def test_extract_exe_finds_the_exe_nested_under_the_release_folder(tmp_path: Path):
+    """The release archive nests everything one level down, and that folder
+    name carries the version - so the exe is found by name at any depth,
+    never by a hard-coded path."""
+    archive = _portable_zip(
+        tmp_path / "BridgeBox_Portable-v0.1.4.zip",
+        members={
+            "BridgeBox_Portable-v0.1.4/README.md": b"# readme",
+            "BridgeBox_Portable-v0.1.4/bridgebox.exe": b"MZ-real-payload",
+            "BridgeBox_Portable-v0.1.4/zapret/winws.exe": b"not-the-app",
+        },
+    )
+    dest = tmp_path / "staged.exe"
+
+    result = app_update.extract_exe_from_archive(archive, dest)
+
+    assert result == dest
+    assert dest.read_bytes() == b"MZ-real-payload"
+
+
+def test_extract_exe_raises_when_the_archive_holds_no_bridgebox_exe(tmp_path: Path):
+    archive = _portable_zip(
+        tmp_path / "wrong.zip", members={"docs/readme.txt": b"nothing here"}
+    )
+
+    with pytest.raises(RuntimeError, match="no bridgebox.exe"):
+        app_update.extract_exe_from_archive(archive, tmp_path / "staged.exe")
+
+
+def test_extract_exe_ignores_a_traversal_path_in_the_archive(tmp_path: Path):
+    """A hostile entry name must not steer where anything lands: exactly one
+    member is read, and it goes to the path this function was handed."""
+    archive = _portable_zip(
+        tmp_path / "evil.zip",
+        members={"../../../../bridgebox.exe": b"payload"},
+    )
+    dest = tmp_path / "staged" / "staged.exe"
+
+    app_update.extract_exe_from_archive(archive, dest)
+
+    assert dest.read_bytes() == b"payload"
+    # Nothing was written outside the directory we named.
+    assert not (tmp_path.parent / "bridgebox.exe").exists()
+
+
+def test_extract_exe_refuses_a_zip_bomb(tmp_path: Path):
+    """The cap is measured on the decompressed stream, not on the entry's
+    own declared size - a lying header must not buy unbounded disk."""
+    archive = _portable_zip(
+        tmp_path / "bomb.zip", members={"bridgebox.exe": b"\0" * 5_000_000}
+    )
+    dest = tmp_path / "staged.exe"
+
+    with pytest.raises(ValueError, match="exceeds"):
+        app_update.extract_exe_from_archive(archive, dest, max_bytes=1_000_000)
+
+    assert not dest.exists()

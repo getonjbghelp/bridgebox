@@ -212,6 +212,62 @@ _MESSAGES: dict[str, dict[Locale, str]] = {
         "ru": "комната {room_id}: закрыть не удалось (HTTP {status}: {detail})",
         "en": "room {room_id}: could not close it (HTTP {status}: {detail})",
     },
+    "steam.no_active_account": {
+        "ru": "Не удалось определить активный аккаунт Steam.",
+        "en": "Could not determine the active Steam account.",
+    },
+    "steam.could_not_close_steam": {
+        "ru": "Не удалось закрыть Steam.",
+        "en": "Could not close Steam.",
+    },
+    "steam.backup_failed": {
+        "ru": "Не удалось сохранить резервную копию текущих настроек.",
+        "en": "Could not save a backup of the current settings.",
+    },
+    "steam.game_not_found": {
+        "ru": "Игра не найдена в настройках Steam.",
+        "en": "Game not found in Steam's settings.",
+    },
+    "steam.no_backup": {
+        "ru": "Нет сохранённой резервной копии для этой игры.",
+        "en": "No backup on record for this game.",
+    },
+    "steam.not_found": {
+        "ru": "Steam не найден на этом компьютере.",
+        "en": "Steam wasn't found on this computer.",
+    },
+    "steam.already_running": {
+        "ru": "Операция уже выполняется, подождите.",
+        "en": "An operation is already running, please wait.",
+    },
+    "other.no_backup": {
+        "ru": "Нет сохранённой резервной копии для этого файла.",
+        "en": "No backup on record for this file.",
+    },
+    "other.lnk_unreadable": {
+        "ru": "Не удалось прочитать или изменить ярлык.",
+        "en": "Could not read or modify the shortcut.",
+    },
+    "other.invalid_json": {
+        "ru": "Файл jbg.config.jet повреждён или имеет неверный формат.",
+        "en": "jbg.config.jet is corrupted or not valid JSON.",
+    },
+    "other.not_found": {
+        "ru": "Файл не найден по сохранённому пути.",
+        "en": "File not found at the recorded path.",
+    },
+    "other.file_error": {
+        "ru": "Не удалось изменить файл.",
+        "en": "Could not modify the file.",
+    },
+    "other.unknown_kind": {
+        "ru": "Неизвестный тип элемента.",
+        "en": "Unknown item type.",
+    },
+    "other.already_running": {
+        "ru": "Операция уже выполняется, подождите.",
+        "en": "An operation is already running, please wait.",
+    },
 }
 
 

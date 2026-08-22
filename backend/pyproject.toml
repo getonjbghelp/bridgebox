@@ -1,6 +1,6 @@
 [project]
 name = "bridgebox"
-version = "0.1.2b1"
+version = "0.1.3b1"
 description = "Local proxy bridge for Jackbox Games DPI-bypass routing via Zapret"
 requires-python = ">=3.11"
 dependencies = [
@@ -11,6 +11,7 @@ dependencies = [
     # issues the local CA and leaf certificate.
     "cryptography>=50.0",
     "pywebview>=5.1",
+    "pywin32>=306",
 ]
 
 [project.optional-dependencies]

@@ -1,0 +1,54 @@
+.bb-other-auto {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
+.bb-button--primary.bb-other-auto__insert-btn {
+  align-self: flex-start;
+  background: linear-gradient(135deg, var(--color-accent), var(--color-accent-hover));
+}
+.bb-button--primary.bb-other-auto__insert-btn:not(:disabled):hover {
+  background: linear-gradient(135deg, var(--color-accent-hover), var(--color-accent-pressed));
+}
+
+.bb-other-auto__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  list-style: none;
+  padding: 0;
+  margin: var(--space-2) 0;
+}
+
+.bb-other-auto__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.bb-other-auto__label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.bb-other-auto__kind {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-caption);
+}
+
+.bb-other-auto__progress {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.bb-other-auto__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}

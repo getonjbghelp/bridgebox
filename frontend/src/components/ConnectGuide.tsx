@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Button } from './Button'
+import { SteamAutoConfig } from './SteamAutoConfig'
+import { OtherAutoConfig } from './OtherAutoConfig'
 import { IconChevron, IconCopy, IconFolder, IconPlay, IconSteam } from './icons'
 import { useSpringTransition } from '../lib/motion'
 import { useStrings } from '../lib/strings'
@@ -92,6 +94,7 @@ function SteamGuide({ launchOption }: { launchOption: string }) {
   const strings = useStrings()
   return (
     <>
+      <SteamAutoConfig />
       <p className="bb-guide__intro">{strings.home.steamIntro}</p>
       <ol className="bb-guide__steps">
         <li>{strings.home.steamStep1}</li>
@@ -118,6 +121,7 @@ function OtherGuide({ launchOption, address }: { launchOption: string; address: 
   const strings = useStrings()
   return (
     <>
+      <OtherAutoConfig />
       <p className="bb-guide__intro">{strings.home.otherIntro}</p>
       <p className="bb-guide__intro">{strings.home.otherLead}</p>
 

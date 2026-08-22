@@ -1268,8 +1268,9 @@ def test_apply_app_update_coro_downloads_and_swaps_the_exe(tmp_path: Path, monke
 
     class _Release:
         version = "0.2.0"
-        exe_url = "https://objects.githubusercontent.com/BridgeBox.exe"
-        exe_digest = None  # nothing to verify - see verify_exe_digest's own tests
+        asset_url = "https://objects.githubusercontent.com/BridgeBox.exe"
+        asset_is_archive = False
+        asset_digest = None  # nothing to verify - see verify_exe_digest's own tests
 
     async def fake_fetch(session, **kw):
         return _Release()
@@ -1321,8 +1322,9 @@ def test_apply_app_update_coro_refuses_a_digest_mismatch_and_does_not_swap(
 
     class _Release:
         version = "0.2.0"
-        exe_url = "https://objects.githubusercontent.com/BridgeBox.exe"
-        exe_digest = "sha256:" + "a" * 64  # will never match b"new"
+        asset_url = "https://objects.githubusercontent.com/BridgeBox.exe"
+        asset_is_archive = False
+        asset_digest = "sha256:" + "a" * 64  # will never match b"new"
 
     async def fake_fetch(session, **kw):
         return _Release()
@@ -1353,7 +1355,7 @@ def test_apply_app_update_coro_refuses_a_digest_mismatch_and_does_not_swap(
     assert not stage_path.exists(), "a checksum-rejected download must not linger on disk"
 
 
-def test_apply_app_update_coro_errors_when_the_release_has_no_exe_asset(
+def test_apply_app_update_coro_errors_when_the_release_has_nothing_downloadable(
     tmp_path: Path, monkeypatch
 ):
     exe_path = tmp_path / "BridgeBox.exe"
@@ -1362,7 +1364,8 @@ def test_apply_app_update_coro_errors_when_the_release_has_no_exe_asset(
 
     class _Release:
         version = "0.2.0"
-        exe_url = None
+        asset_url = None
+        asset_is_archive = False
 
     async def fake_fetch(session, **kw):
         return _Release()
@@ -1390,8 +1393,9 @@ def test_apply_app_update_coro_never_touches_config(tmp_path: Path, monkeypatch)
 
     class _Release:
         version = "0.2.0"
-        exe_url = "https://objects.githubusercontent.com/BridgeBox.exe"
-        exe_digest = None
+        asset_url = "https://objects.githubusercontent.com/BridgeBox.exe"
+        asset_is_archive = False
+        asset_digest = None
 
     async def fake_fetch(session, **kw):
         return _Release()
@@ -2535,3 +2539,491 @@ def test_open_external_url_rejects_a_non_http_scheme(tmp_path: Path, monkeypatch
 
     assert result["ok"] is False
     assert opened == []
+
+
+def test_scan_steam_games_returns_empty_list_when_steam_is_not_installed(tmp_path: Path, monkeypatch):
+    from bridgebox import steam_launch
+    monkeypatch.setattr(steam_launch, "find_steam_path", lambda **kw: None)
+    api = _make_api(tmp_path)
+
+    result = api.scan_steam_games()
+
+    assert result["ok"] is True
+    assert result["games"] == []
+    # Distinct from "no eligible games" - see test_scan_steam_games_reason_is_none_when_no_eligible_games.
+    assert result["reason"]
+
+
+def test_scan_steam_games_reason_names_no_active_account(tmp_path: Path, monkeypatch):
+    """Steam is installed but the active account can't be resolved - a
+    different situation from "Steam not found" and from "no eligible
+    games", each of which needs its own explanation (Finding 5)."""
+    from bridgebox import i18n, steam_launch
+    steam_dir = tmp_path / "Steam"
+    monkeypatch.setattr(steam_launch, "find_steam_path", lambda **kw: steam_dir)
+    monkeypatch.setattr(steam_launch, "scan_installed_jackbox_games", lambda p: [])
+    monkeypatch.setattr(steam_launch, "find_active_local_config", lambda p: None)
+    api = _make_api(tmp_path)
+
+    result = api.scan_steam_games()
+
+    assert result["ok"] is True
+    assert result["games"] == []
+    assert result["reason"] == i18n.t("steam.no_active_account", api.current_language())
+
+
+def test_scan_steam_games_reason_is_none_when_no_eligible_games(tmp_path: Path, monkeypatch):
+    """Steam and the active account both resolve fine - there just aren't
+    any eligible Jackbox titles. This is not an error state, so "reason"
+    must be None and the frontend's own static copy applies instead."""
+    from bridgebox import steam_launch
+    steam_dir = tmp_path / "Steam"
+    monkeypatch.setattr(steam_launch, "find_steam_path", lambda **kw: steam_dir)
+    monkeypatch.setattr(steam_launch, "scan_installed_jackbox_games", lambda p: [])
+    config_path = tmp_path / "localconfig.vdf"
+    monkeypatch.setattr(steam_launch, "find_active_local_config", lambda p: config_path)
+    monkeypatch.setattr(steam_launch, "filter_configurable_games", lambda cfg, games: games)
+    api = _make_api(tmp_path)
+
+    result = api.scan_steam_games()
+
+    assert result["ok"] is True
+    assert result["games"] == []
+    assert result["reason"] is None
+
+
+def test_scan_steam_games_reports_eligible_titles_with_backup_flag(tmp_path: Path, monkeypatch):
+    from bridgebox import steam_launch
+    steam_dir = tmp_path / "Steam"
+    monkeypatch.setattr(steam_launch, "find_steam_path", lambda **kw: steam_dir)
+    monkeypatch.setattr(
+        steam_launch, "scan_installed_jackbox_games",
+        lambda p: [steam_launch.SteamGame(appid="852600", name="The Jackbox Party Pack 7")],
+    )
+    config_path = tmp_path / "localconfig.vdf"
+    monkeypatch.setattr(steam_launch, "find_active_local_config", lambda p: config_path)
+    monkeypatch.setattr(
+        steam_launch, "filter_configurable_games",
+        lambda cfg, games: games,
+    )
+    steam_launch.save_backups(tmp_path, {"852600": {"hadLaunchOptions": True, "value": "-dx11"}})
+    api = _make_api(tmp_path)
+
+    result = api.scan_steam_games()
+
+    assert result["ok"] is True
+    assert result["games"] == [{"appid": "852600", "name": "The Jackbox Party Pack 7", "hasBackup": True}]
+
+
+def test_apply_steam_launch_options_reports_steam_not_found(tmp_path: Path, monkeypatch):
+    from bridgebox import steam_launch
+    monkeypatch.setattr(steam_launch, "find_steam_path", lambda **kw: None)
+    api = _make_api(tmp_path)
+
+    result = api.apply_steam_launch_options(["852600"])
+
+    assert result["ok"] is False
+    assert result["error"]  # localized text, not empty
+
+
+def test_apply_steam_launch_options_delegates_to_apply_launch_options(tmp_path: Path, monkeypatch):
+    from bridgebox import steam_launch
+    steam_dir = tmp_path / "Steam"
+    monkeypatch.setattr(steam_launch, "find_steam_path", lambda **kw: steam_dir)
+    captured = {}
+
+    def fake_apply(steam_path, project_root, appids, port, **kwargs):
+        captured["args"] = (steam_path, project_root, appids, port)
+        return {"ok": True, "error": None, "results": {"852600": {"ok": True, "error": None}}, "steamRelaunched": True}
+
+    monkeypatch.setattr(steam_launch, "apply_launch_options", fake_apply)
+    api = _make_api(tmp_path)
+
+    result = api.apply_steam_launch_options(["852600"])
+
+    assert result["ok"] is True
+    assert result["results"]["852600"]["ok"] is True
+    assert captured["args"] == (steam_dir, tmp_path, ["852600"], 8443)
+
+
+def test_apply_steam_launch_options_localizes_error_codes(tmp_path: Path, monkeypatch):
+    from bridgebox import steam_launch
+    monkeypatch.setattr(steam_launch, "find_steam_path", lambda **kw: tmp_path)
+    monkeypatch.setattr(
+        steam_launch, "apply_launch_options",
+        lambda *a, **kw: {"ok": False, "error": "could_not_close_steam", "results": {}, "steamRelaunched": False},
+    )
+    api = _make_api(tmp_path)
+
+    result = api.apply_steam_launch_options(["852600"])
+
+    assert result["ok"] is False
+    assert result["error"] not in (None, "could_not_close_steam")  # translated, not the raw code
+
+
+def test_revert_steam_launch_options_delegates_to_revert_launch_options(tmp_path: Path, monkeypatch):
+    from bridgebox import steam_launch
+    steam_dir = tmp_path / "Steam"
+    monkeypatch.setattr(steam_launch, "find_steam_path", lambda **kw: steam_dir)
+    monkeypatch.setattr(
+        steam_launch, "revert_launch_options",
+        lambda *a, **kw: {"ok": True, "error": None, "results": {"852600": {"ok": True, "error": None}}, "steamRelaunched": True},
+    )
+    api = _make_api(tmp_path)
+
+    result = api.revert_steam_launch_options(["852600"])
+
+    assert result["ok"] is True
+
+
+def test_apply_steam_launch_options_uses_a_timeout_well_above_quit_steams_worst_case(tmp_path: Path, monkeypatch):
+    """Regression: the Api-layer timeout used to be a bare `timeout=30`,
+    shorter than quit_steam's own realistic worst case (its -shutdown/poll/
+    taskkill sequence can take close to or over 30s on its own). A timeout
+    here doesn't stop the background work - it just makes the UI report
+    failure while Steam still closes and the file still gets rewritten
+    underneath the user."""
+    from bridgebox import steam_launch
+
+    monkeypatch.setattr(steam_launch, "find_steam_path", lambda **kw: tmp_path)
+    monkeypatch.setattr(
+        steam_launch, "apply_launch_options",
+        lambda *a, **kw: {"ok": True, "error": None, "results": {}, "steamRelaunched": True},
+    )
+    captured = {}
+
+    class CapturingRuntime(FakeRuntime):
+        def run(self, coro_factory, timeout=20.0):
+            captured["timeout"] = timeout
+            return super().run(coro_factory, timeout=timeout)
+
+    api = _make_api(tmp_path, runtime=CapturingRuntime())
+
+    api.apply_steam_launch_options(["852600"])
+
+    assert captured["timeout"] == desktop.STEAM_LAUNCH_API_TIMEOUT_S
+    # Must clear quit_steam's own worst case (three chained 10s subprocess
+    # timeouts plus the poll-loop budget) with real margin, not just nudge
+    # past the old bare 30.
+    assert captured["timeout"] >= 3 * steam_launch._GRACEFUL_QUIT_TIMEOUT_S + 30
+
+
+def test_apply_steam_launch_options_rejects_a_second_call_while_one_is_in_flight(tmp_path: Path, monkeypatch):
+    """Regression: Modal's native <dialog> lets Escape close the "applying"
+    modal back to idle mid-operation, from which the user could immediately
+    trigger a second apply/revert while the first still runs in the
+    background thread - two concurrent close-Steam-and-rewrite sequences
+    against the same file and backup store is a real race."""
+    from bridgebox import i18n, steam_launch
+
+    monkeypatch.setattr(steam_launch, "find_steam_path", lambda **kw: tmp_path)
+
+    def must_not_be_called(*a, **kw):
+        raise AssertionError("apply_launch_options must not run while busy")
+
+    monkeypatch.setattr(steam_launch, "apply_launch_options", must_not_be_called)
+    api = _make_api(tmp_path)
+    api._steam_launch_busy = True
+
+    result = api.apply_steam_launch_options(["852600"])
+
+    assert result == {
+        "ok": False,
+        "error": i18n.t("steam.already_running", api.current_language()),
+        "results": {},
+        "steamRelaunched": False,
+    }
+
+
+def test_apply_steam_launch_options_clears_the_busy_flag_after_finishing(tmp_path: Path, monkeypatch):
+    """The guard must never stay stuck True after a normal run (or a crash)
+    - otherwise every later call would report "already running" forever."""
+    from bridgebox import steam_launch
+
+    monkeypatch.setattr(steam_launch, "find_steam_path", lambda **kw: tmp_path)
+    monkeypatch.setattr(
+        steam_launch, "apply_launch_options",
+        lambda *a, **kw: {"ok": True, "error": None, "results": {}, "steamRelaunched": True},
+    )
+    api = _make_api(tmp_path)
+
+    api.apply_steam_launch_options(["852600"])
+
+    assert api._steam_launch_busy is False
+
+
+def test_apply_steam_launch_options_clears_the_busy_flag_even_when_the_runtime_raises(tmp_path: Path):
+    class FailingRuntime(FakeRuntime):
+        def run(self, coro_factory, timeout=20.0):
+            raise RuntimeError("boom")
+
+    api = _make_api(tmp_path, runtime=FailingRuntime())
+
+    result = api.apply_steam_launch_options(["852600"])
+
+    assert result["ok"] is False
+    assert api._steam_launch_busy is False
+
+
+def test_revert_steam_launch_options_rejects_a_second_call_while_one_is_in_flight(tmp_path: Path, monkeypatch):
+    from bridgebox import i18n, steam_launch
+
+    monkeypatch.setattr(steam_launch, "find_steam_path", lambda **kw: tmp_path)
+
+    def must_not_be_called(*a, **kw):
+        raise AssertionError("revert_launch_options must not run while busy")
+
+    monkeypatch.setattr(steam_launch, "revert_launch_options", must_not_be_called)
+    api = _make_api(tmp_path)
+    api._steam_launch_busy = True
+
+    result = api.revert_steam_launch_options(["852600"])
+
+    assert result == {
+        "ok": False,
+        "error": i18n.t("steam.already_running", api.current_language()),
+        "results": {},
+        "steamRelaunched": False,
+    }
+
+
+def test_start_other_scan_runs_the_scan_and_reports_items(tmp_path: Path, monkeypatch):
+    from bridgebox import other_launch
+    monkeypatch.setattr(other_launch, "list_fixed_drives", lambda: [tmp_path])
+    monkeypatch.setattr(
+        other_launch, "scan_for_other_copies",
+        lambda roots, **kw: [other_launch.OtherCandidate(kind="jet", path="C:\\g\\jbg.config.jet", name="Game")],
+    )
+    api = _make_api(tmp_path)
+
+    start = api.start_other_scan()
+    assert start["ok"] is True
+
+    result = api.other_scan_progress()
+
+    assert result["started"] is True
+    assert result["done"] is True
+    assert result["ok"] is True
+    assert result["items"] == [{"kind": "jet", "path": "C:\\g\\jbg.config.jet", "name": "Game", "hasBackup": False}]
+
+
+def test_other_scan_progress_before_any_scan_started(tmp_path: Path):
+    api = _make_api(tmp_path)
+
+    result = api.other_scan_progress()
+
+    assert result == {"started": False, "done": False, "ok": None, "error": None, "items": [], "foldersChecked": 0}
+
+
+def test_start_other_scan_rejects_a_second_call_while_one_is_in_flight(tmp_path: Path, monkeypatch):
+    from bridgebox import other_launch
+
+    class NeverDoneFuture:
+        def done(self):
+            return False
+
+    api = _make_api(tmp_path)
+    api._other_scan_future = NeverDoneFuture()
+
+    def must_not_be_called(**kw):
+        raise AssertionError("scan must not restart while one is in flight")
+
+    monkeypatch.setattr(other_launch, "list_fixed_drives", must_not_be_called)
+
+    result = api.start_other_scan()
+
+    assert result["ok"] is False
+
+
+def test_apply_other_launch_options_delegates_to_apply_launch_options(tmp_path: Path, monkeypatch):
+    from bridgebox import other_launch
+    captured = {}
+
+    def fake_apply(project_root, items, port):
+        captured["args"] = (project_root, items, port)
+        return {"ok": True, "error": None, "results": {"C:\\g.lnk": {"ok": True, "error": None}}}
+
+    monkeypatch.setattr(other_launch, "apply_launch_options", fake_apply)
+    api = _make_api(tmp_path)
+
+    result = api.apply_other_launch_options([{"kind": "shortcut", "path": "C:\\g.lnk"}])
+
+    assert result["ok"] is True
+    assert captured["args"] == (tmp_path, [{"kind": "shortcut", "path": "C:\\g.lnk"}], 8443)
+
+
+def test_apply_other_launch_options_localizes_error_codes(tmp_path: Path, monkeypatch):
+    from bridgebox import other_launch
+    monkeypatch.setattr(
+        other_launch, "apply_launch_options",
+        lambda *a, **kw: {"ok": False, "error": None, "results": {"C:\\g.lnk": {"ok": False, "error": "lnk_unreadable"}}},
+    )
+    api = _make_api(tmp_path)
+
+    result = api.apply_other_launch_options([{"kind": "shortcut", "path": "C:\\g.lnk"}])
+
+    assert result["results"]["C:\\g.lnk"]["error"] not in (None, "lnk_unreadable")  # translated, not the raw code
+
+
+def test_apply_other_launch_options_rejects_a_second_call_while_one_is_in_flight(tmp_path: Path, monkeypatch):
+    from bridgebox import i18n, other_launch
+
+    def must_not_be_called(*a, **kw):
+        raise AssertionError("apply_launch_options must not run while busy")
+
+    monkeypatch.setattr(other_launch, "apply_launch_options", must_not_be_called)
+    api = _make_api(tmp_path)
+    api._other_launch_busy = True
+
+    result = api.apply_other_launch_options([{"kind": "shortcut", "path": "C:\\g.lnk"}])
+
+    assert result == {"ok": False, "error": i18n.t("other.already_running", api.current_language()), "results": {}}
+
+
+def test_apply_other_launch_options_clears_the_busy_flag_after_finishing(tmp_path: Path, monkeypatch):
+    from bridgebox import other_launch
+    monkeypatch.setattr(
+        other_launch, "apply_launch_options",
+        lambda *a, **kw: {"ok": True, "error": None, "results": {}},
+    )
+    api = _make_api(tmp_path)
+
+    api.apply_other_launch_options([])
+
+    assert api._other_launch_busy is False
+
+
+def test_revert_other_launch_options_delegates_to_revert_launch_options(tmp_path: Path, monkeypatch):
+    from bridgebox import other_launch
+    monkeypatch.setattr(
+        other_launch, "revert_launch_options",
+        lambda *a, **kw: {"ok": True, "error": None, "results": {"C:\\g.lnk": {"ok": True, "error": None}}},
+    )
+    api = _make_api(tmp_path)
+
+    result = api.revert_other_launch_options([{"kind": "shortcut", "path": "C:\\g.lnk"}])
+
+    assert result["ok"] is True
+
+
+def test_revert_other_launch_options_rejects_a_second_call_while_one_is_in_flight(tmp_path: Path, monkeypatch):
+    from bridgebox import i18n, other_launch
+
+    def must_not_be_called(*a, **kw):
+        raise AssertionError("revert_launch_options must not run while busy")
+
+    monkeypatch.setattr(other_launch, "revert_launch_options", must_not_be_called)
+    api = _make_api(tmp_path)
+    api._other_launch_busy = True
+
+    result = api.revert_other_launch_options([{"kind": "shortcut", "path": "C:\\g.lnk"}])
+
+    assert result == {"ok": False, "error": i18n.t("other.already_running", api.current_language()), "results": {}}
+
+
+def test_restart_app_strips_pyinstaller_onefile_handoff_vars(tmp_path: Path, monkeypatch):
+    """The 0.0.0-version bug: PyInstaller's onefile bootloader hands the Python
+    stage `_PYI_APPLICATION_HOME_DIR` (and friends) meaning "the archive is
+    already unpacked here". Inherited by a relaunched copy, the new instance
+    skips extraction and runs out of the OLD process's temp directory - which
+    that process deletes as it exits. The restarted app then reported version
+    0.0.0 (both version.app_version() sources live in that directory) and
+    offered an "update" to the version it was already running."""
+    captured = {}
+
+    def fake_popen(command, **kwargs):
+        captured["command"] = command
+        captured["kwargs"] = kwargs
+
+    monkeypatch.setattr(desktop.subprocess, "Popen", fake_popen)
+    monkeypatch.setenv("_PYI_APPLICATION_HOME_DIR", r"C:\Temp\_MEI123456")
+    monkeypatch.setenv("_PYI_ARCHIVE_FILE", r"C:\app\bridgebox.exe")
+    monkeypatch.setenv("_PYI_PARENT_PROCESS_LEVEL", "1")
+    monkeypatch.setenv("BRIDGEBOX_UNRELATED", "keep-me")
+    api = _make_api(tmp_path)
+
+    result = api.restart_app()
+
+    assert result["ok"] is True
+    env = captured["kwargs"]["env"]
+    for name in desktop._PYI_ONEFILE_HANDOFF_VARS:
+        assert name not in env, f"{name} must not reach the relaunched process"
+    # Everything else still goes through - this strips a specific handoff, it
+    # does not hand the child a blank environment.
+    assert env["BRIDGEBOX_UNRELATED"] == "keep-me"
+
+
+def test_restart_app_passes_a_real_environment_outside_a_frozen_build(tmp_path: Path, monkeypatch):
+    """A source checkout has no _PYI_* vars set at all; the child must still
+    inherit the environment rather than get an empty one."""
+    captured = {}
+
+    monkeypatch.setattr(
+        desktop.subprocess, "Popen", lambda command, **kwargs: captured.update(kwargs)
+    )
+    monkeypatch.setenv("BRIDGEBOX_UNRELATED", "keep-me")
+    api = _make_api(tmp_path)
+
+    api.restart_app()
+
+    assert captured["env"]["BRIDGEBOX_UNRELATED"] == "keep-me"
+    assert len(captured["env"]) > 1
+
+
+def test_apply_app_update_coro_unpacks_the_exe_from_a_portable_zip(tmp_path: Path, monkeypatch):
+    """Releases ship the portable .zip. The archive is a throwaway and goes
+    to the temp folder, but the exe it holds must land next to the binary it
+    replaces: replace_running_exe renames files past each other, which only
+    works within one volume, and temp is routinely on another drive."""
+    import zipfile
+
+    exe_path = tmp_path / "app" / "BridgeBox.exe"
+    exe_path.parent.mkdir()
+    exe_path.write_bytes(b"old")
+    monkeypatch.setattr(desktop.app_update, "running_exe_path", lambda: exe_path)
+
+    class _Release:
+        version = "0.2.0"
+        asset_url = "https://objects.githubusercontent.com/BridgeBox_Portable-v0.2.0.zip"
+        asset_digest = None
+        asset_is_archive = True
+
+    async def fake_fetch(session, **kw):
+        return _Release()
+
+    downloaded = {}
+
+    async def fake_download_exe(session, url, dest, **kw):
+        downloaded["url"] = url
+        downloaded["dest"] = Path(dest)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(dest, "w") as bundle:
+            bundle.writestr("BridgeBox_Portable-v0.2.0/README.md", b"# readme")
+            bundle.writestr("BridgeBox_Portable-v0.2.0/bridgebox.exe", b"new")
+        return dest
+
+    swapped = {}
+
+    def fake_replace(new_path, current_path):
+        swapped["new_path"] = Path(new_path)
+        current_path.write_bytes(Path(new_path).read_bytes())
+        return current_path.with_name(current_path.name + ".old")
+
+    monkeypatch.setattr(desktop.app_update, "fetch_latest_release", fake_fetch)
+    monkeypatch.setattr(desktop.app_update, "download_exe", fake_download_exe)
+    monkeypatch.setattr(desktop.app_update, "replace_running_exe", fake_replace)
+    monkeypatch.setattr(desktop.integrity, "write_manifest", lambda root: None)
+    api = _make_api(tmp_path)
+
+    import asyncio as _asyncio
+
+    result = _asyncio.run(api._apply_app_update_coro())
+
+    assert result == {"ok": True, "error": None, "version": "0.2.0"}
+    assert exe_path.read_bytes() == b"new"
+    # The zip went to temp, the exe came out beside the running binary.
+    assert downloaded["dest"].suffix == ".zip"
+    assert downloaded["dest"].parent == api._temp_root()
+    assert swapped["new_path"].parent == exe_path.parent
+    # The archive is scratch - it must not be left behind.
+    assert not downloaded["dest"].exists()

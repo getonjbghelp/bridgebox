@@ -53,8 +53,9 @@ import os
 import re
 import sys
 import time
+import zipfile
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from .winlock import retry_locked as _retry_locked_base
 
@@ -118,9 +119,15 @@ class AppRelease:
     notes: str  # the release body, Markdown - rendered as-is by the frontend
     html_url: str
     critical: bool
-    exe_url: str | None = None  # None if the release has no .exe asset
-    exe_size: int = 0
-    exe_digest: str | None = None  # "sha256:<hex>" from GitHub, or None if unavailable
+    # The asset a self-update would download. Named for what it is rather
+    # than for the .exe it eventually becomes: releases ship the portable
+    # .zip, and a bare .exe asset is the exception, not the rule.
+    asset_url: str | None = None  # None if the release has nothing usable
+    asset_size: int = 0
+    asset_digest: str | None = None  # "sha256:<hex>" from GitHub, or None if unavailable
+    # True when asset_url points at the portable .zip, so the exe has to be
+    # unpacked out of it first - see extract_exe_from_archive.
+    asset_is_archive: bool = False
 
 
 def _numeric_parts(value: str) -> tuple[int, ...]:
@@ -161,20 +168,20 @@ async def fetch_latest_release(session, *, url: str = RELEASES_URL) -> AppReleas
     html_url = str(payload.get("html_url") or f"https://github.com/{REPO}/releases/latest")
     _require_allowed_host(html_url)
 
-    exe_url: str | None = None
-    exe_size = 0
-    exe_digest: str | None = None
-    for asset in payload.get("assets") or []:
-        asset_name = str(asset.get("name") or "")
-        if asset_name.lower().endswith(".exe"):
-            candidate = str(asset.get("browser_download_url") or "")
-            _require_allowed_host(candidate)
-            exe_url = candidate
-            exe_size = int(asset.get("size") or 0)
-            # None on an asset uploaded before GitHub added this (June 2025) -
-            # verify_exe_digest treats that as "nothing to check", not an error.
-            exe_digest = asset.get("digest") or None
-            break
+    chosen = _pick_update_asset(payload.get("assets") or [])
+    asset_url: str | None = None
+    asset_size = 0
+    asset_digest: str | None = None
+    asset_is_archive = False
+    if chosen is not None:
+        candidate = str(chosen.get("browser_download_url") or "")
+        _require_allowed_host(candidate)
+        asset_url = candidate
+        asset_size = int(chosen.get("size") or 0)
+        # None on an asset uploaded before GitHub added this (June 2025) -
+        # verify_exe_digest treats that as "nothing to check", not an error.
+        asset_digest = chosen.get("digest") or None
+        asset_is_archive = str(chosen.get("name") or "").lower().endswith(".zip")
 
     return AppRelease(
         version=version,
@@ -182,10 +189,39 @@ async def fetch_latest_release(session, *, url: str = RELEASES_URL) -> AppReleas
         notes=notes,
         html_url=html_url,
         critical=is_critical(name, notes),
-        exe_url=exe_url,
-        exe_size=exe_size,
-        exe_digest=exe_digest,
+        asset_url=asset_url,
+        asset_size=asset_size,
+        asset_digest=asset_digest,
+        asset_is_archive=asset_is_archive,
     )
+
+
+def _pick_update_asset(assets: list) -> dict | None:
+    """The asset a self-update should download, or None if the release
+    carries nothing usable.
+
+    A bare .exe wins outright - it needs no unpacking. Otherwise the
+    portable .zip, which is what releases actually ship (the exe alone is
+    not a runnable BridgeBox: it needs the zapret/ folder beside it, so a
+    release publishes the whole folder zipped). Among several .zip assets
+    the one whose name says "portable" wins, so a release that also carries
+    some other archive does not send the updater after the wrong one."""
+    exes = []
+    zips = []
+    for asset in assets:
+        name = str(asset.get("name") or "").lower()
+        if name.endswith(".exe"):
+            exes.append(asset)
+        elif name.endswith(".zip"):
+            zips.append(asset)
+    if exes:
+        return exes[0]
+    if not zips:
+        return None
+    for asset in zips:
+        if "portable" in str(asset.get("name") or "").lower():
+            return asset
+    return zips[0]
 
 
 def _require_allowed_host(url: str) -> None:
@@ -288,6 +324,61 @@ async def download_exe(
         return dest
 
     raise RuntimeError("unreachable: the loop above either returns or raises")
+
+
+EXE_NAME_IN_ARCHIVE = "bridgebox.exe"
+
+
+def extract_exe_from_archive(
+    archive: Path, dest: Path, *, max_bytes: int = MAX_EXE_BYTES
+) -> Path:
+    """Pull just bridgebox.exe out of a portable release .zip and write it
+    to `dest`.
+
+    Searched by file name at any depth, not by a fixed path: the release
+    archive nests everything one level down (BridgeBox_Portable-v0.1.2b1/
+    bridgebox.exe), and that folder name carries the version, so hard-coding
+    it would break on the next release.
+
+    Exactly one member is read and it goes to a path this function was
+    handed - the archive's own stored names never steer where anything is
+    written, which is what keeps a hostile "../../evil" entry inert
+    (unlike ZipFile.extractall, which honours them). The size cap is
+    checked against the decompressed stream rather than the entry's own
+    declared size, so a zip bomb cannot spend more disk than a real
+    download would."""
+    archive = Path(archive)
+    dest = Path(dest)
+    with zipfile.ZipFile(archive) as bundle:
+        member = next(
+            (
+                info
+                for info in bundle.infolist()
+                if not info.is_dir()
+                and PurePosixPath(info.filename).name.lower() == EXE_NAME_IN_ARCHIVE
+            ),
+            None,
+        )
+        if member is None:
+            raise RuntimeError(
+                f"{archive.name} has no {EXE_NAME_IN_ARCHIVE} in it - "
+                "not a BridgeBox portable archive"
+            )
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        with bundle.open(member) as source, dest.open("wb") as handle:
+            written = 0
+            while chunk := source.read(64 * 1024):
+                written += len(chunk)
+                if written > max_bytes:
+                    handle.close()
+                    dest.unlink(missing_ok=True)
+                    raise ValueError(
+                        f"{EXE_NAME_IN_ARCHIVE} in {archive.name} exceeds "
+                        f"{max_bytes} bytes - refusing"
+                    )
+                handle.write(chunk)
+    logger.info("extracted %s (%d bytes) from %s", member.filename, written, archive.name)
+    return dest
 
 
 def _sha256_file(path: Path) -> str:
