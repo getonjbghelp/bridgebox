@@ -122,6 +122,14 @@ server address set a different way; everything after that is the same.
 
 ### Steam
 
+The **"Insert Automatically"** button at the top of the guide finds your installed
+Steam copies of Jackbox itself and sets the launch option for you - nothing to search
+for or edit by hand. Applying it closes and reopens Steam (any game currently running
+through it will stop); you can undo it from the same place with the "Restore previous
+setting" button.
+
+If you'd rather do it by hand (or Steam wasn't found automatically):
+
 1. In Steam, right-click the Party Pack game → **Properties**.
 2. **General** tab → **Launch Options** field.
 3. Paste this line in:
@@ -139,7 +147,14 @@ server address set a different way; everything after that is the same.
 
 ### Other copies (not through Steam)
 
-Two ways to do it - the in-app guide has a short animation for each step.
+The same **"Insert Automatically"** button here scans every local drive: it finds
+Jackbox shortcuts and `jbg.config.jet` files and lets you pick which ones to fix. It
+only patches what already exists - nothing gets created from scratch, so a copy with
+no shortcut and no config file simply won't show up in the list. A full drive scan can
+take a couple of minutes; a folder-checked counter shows it's still working.
+
+If you'd rather do it by hand - two ways, the in-app guide has a short animation for
+each step.
 
 **Method 1 - via a shortcut (simpler).** Create a shortcut to the game's `.exe`, open
 its Properties → **Target** field, and after the closing quote add a space and the same
