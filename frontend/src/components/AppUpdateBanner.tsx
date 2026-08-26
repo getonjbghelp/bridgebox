@@ -5,6 +5,8 @@ import { Modal } from './Modal'
 import { DiagBadge, type DiagState } from './DiagBadge'
 import { useStrings, t } from '../lib/strings'
 import { renderChangelogBody } from '../lib/richText'
+import { pickReleaseNotes } from '../lib/releaseNotes'
+import { useMotionPrefs } from '../state/MotionPrefsContext'
 import { callBridge, isNativeBridgeAvailable, waitForBridgeReady } from '../lib/bridge'
 import { clearPoll } from '../lib/poll'
 import './AppUpdateBanner.css'
@@ -51,6 +53,10 @@ const CRITICAL_REMINDER_MS = 25 * 60 * 1000
 
 export function AppUpdateBanner() {
   const strings = useStrings()
+  // Releases carry both languages in one body (see lib/releaseNotes.ts). This
+  // is the resolved locale the app is actually being read in, not the stored
+  // "system" preference, so it matches the rest of the interface around it.
+  const { locale } = useMotionPrefs()
   const [check, setCheck] = useState<AppUpdateCheck | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
   // Guards the FIRST automatic open only - re-opens after that (the critical
@@ -234,8 +240,10 @@ export function AppUpdateBanner() {
             {check.critical && (
               <p className="bb-update-modal__critical-tag">{strings.appUpdate.criticalTag}</p>
             )}
-            <div className="bb-update-modal__notes">
-              {check.notes ? renderChangelogBody(check.notes) : strings.appUpdate.noNotes}
+            <div className="bb-update-modal__notes bb-prose">
+              {check.notes
+                ? renderChangelogBody(pickReleaseNotes(check.notes, locale))
+                : strings.appUpdate.noNotes}
             </div>
             <div className="bb-update-modal__actions">
               {applyState === 'idle' && (

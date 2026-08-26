@@ -167,7 +167,7 @@ def test_migrate_config_file_adds_a_brand_new_top_level_section(tmp_path: Path):
     on_disk = yaml.safe_load(path.read_text(encoding="utf-8"))
     assert on_disk["server"]["port"] == 9000, "the user's own value must survive"
     assert "app_update" in on_disk
-    assert on_disk["app_update"]["check_on_startup"] is True
+    assert on_disk["app_update"]["check_on_startup"] is False
 
 
 def test_migrate_config_file_fills_a_missing_field_inside_an_existing_section(tmp_path: Path):

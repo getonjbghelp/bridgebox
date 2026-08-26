@@ -41,6 +41,13 @@ def _base(**overrides: object) -> dict:
                 "contribution": {"ru": "Вклад", "en": "Contribution"},
             }
         ],
+        "other": [
+            {
+                "id": "o1",
+                "name": "Dave",
+                "reason": {"ru": "Причина", "en": "Reason"},
+            }
+        ],
     }
     data.update(overrides)
     return data
@@ -51,6 +58,14 @@ def test_a_minimal_valid_entry_per_category_round_trips():
     assert result["donators"][0]["name"] == "Alice"
     assert result["bughunters"][0]["bugTitle"] == {"ru": "Заголовок", "en": "Title"}
     assert result["testers"][0]["environment"] == "Windows 11"
+    assert result["other"][0]["reason"] == {"ru": "Причина", "en": "Reason"}
+
+
+def test_other_requires_a_reason():
+    data = _base()
+    del data["other"][0]["reason"]
+    with pytest.raises(ValueError, match="reason"):
+        validate_people(data)
 
 
 def test_a_missing_required_field_is_rejected():

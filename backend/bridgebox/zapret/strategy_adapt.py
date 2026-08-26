@@ -235,18 +235,54 @@ def render_bat(original_name: str, tcp_profile: Profile, udp_profile: Profile) -
 _SAFE_STEM_RE = re.compile(r"^[A-Za-z0-9 ()._-]+$")
 
 
+_QUALIFIER_RE = re.compile(r"^General \((.+)\)$")
+
+
+def _pretty_qualifier(qualifier: str) -> str | None:
+    """Maps a Flowseal general*.bat qualifier onto the hand-picked name
+    BridgeBox's own shipped strategies already use for it (ALT13 -> Alternative
+    13, FAKE TLS AUTO ALT2 -> Fake TLS Auto 2, ...) - confirmed against all 21
+    currently shipped adaptations plus ALT13's real-world debut, every
+    qualifier in these three families maps onto an existing name with no
+    ambiguity. This used to be left as the raw "General (ALT13)" on the theory
+    that guessing a name was riskier than not - but plan_strategies matches
+    strategies by filename, so NOT mapping it was the real risk: every release
+    silently added a byte-for-byte duplicate of an existing strategy under
+    the wrong name instead of recognizing and updating it.
+
+    A qualifier outside these three families (something Flowseal adds later
+    that nobody has mapped yet) returns None, and the caller keeps the raw
+    "General (<qualifier>)" name rather than guessing at it."""
+    m = re.fullmatch(r"ALT(\d*)", qualifier)
+    if m:
+        return f"Alternative {m.group(1) or 1}"
+    m = re.fullmatch(r"SIMPLE FAKE(?: ALT(\d*))?", qualifier)
+    if m:
+        variant = m.group(1)
+        return "Simple Fake" if variant is None else f"Simple Fake {variant or 1}"
+    m = re.fullmatch(r"FAKE TLS AUTO(?: ALT(\d*))?", qualifier)
+    if m:
+        variant = m.group(1)
+        return "Fake TLS Auto" if variant is None else f"Fake TLS Auto {variant or 1}"
+    return None
+
+
 def suggest_filename(original_name: str) -> str:
-    """general (ALT13).bat -> General (ALT13).bat. Deliberately not trying to
-    reproduce the hand-picked pretty names (Alternative 5.bat, Fake TLS Auto
-    2.bat, ...) BridgeBox's own 21 files use - guessing a prettifier for a
-    qualifier nobody has seen yet is more likely to collide or mislabel than
-    to help, and the raw qualifier is unambiguous.
+    """general (ALT13).bat -> Alternative 13.bat when the qualifier matches a
+    known family (see _pretty_qualifier); general (EXP).bat -> General
+    (EXP).bat, and anything else unrecognized, unchanged - EXP has no
+    established pretty name of its own to map to.
 
     Raises ValueError on a stem that is not a plain filename - see
     _SAFE_STEM_RE. Callers treat that as "cannot adapt this one"."""
     stem = original_name[:-4] if original_name.lower().endswith(".bat") else original_name
     if stem.lower().startswith("general"):
         stem = "General" + stem[len("general"):]
+    match = _QUALIFIER_RE.match(stem)
+    if match:
+        pretty = _pretty_qualifier(match.group(1))
+        if pretty is not None:
+            stem = pretty
     if not _SAFE_STEM_RE.match(stem) or stem.strip(" .") != stem:
         raise ValueError(f"unsafe strategy filename: {original_name!r}")
     return f"{stem}.bat"

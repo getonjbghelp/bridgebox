@@ -390,6 +390,28 @@ def test_extract_original_strategies_takes_only_top_level_general_bats(tmp_path:
     assert written["general.bat"].read_bytes() == b"@echo off"
 
 
+def test_extract_original_strategies_unwraps_a_single_release_root_folder(tmp_path: Path):
+    """Real Flowseal release zips (e.g. 1.10.2) wrap every entry in a
+    "zapret-discord-youtube-<version>/" folder. Without unwrapping that one
+    shared root, every general*.bat looks one level too deep and this
+    function silently returns nothing - which is exactly what happened
+    against the real 1.10.2 download (0 added, 0 skipped, no diagnostic)."""
+    archive = _zip(
+        tmp_path / "r.zip",
+        {
+            "zapret-discord-youtube-1.10.2/general.bat": b"@echo off",
+            "zapret-discord-youtube-1.10.2/general (ALT13).bat": b"@echo off",
+            "zapret-discord-youtube-1.10.2/service.bat": b"@echo off",
+            "zapret-discord-youtube-1.10.2/strategies/general.bat": b"nested - not this one",
+            "zapret-discord-youtube-1.10.2/bin/winws.exe": PE,
+        },
+    )
+
+    written = update.extract_original_strategies(archive, tmp_path / "staged")
+
+    assert set(written) == {"general.bat", "general (ALT13).bat"}
+
+
 def test_extract_original_strategies_is_case_insensitive():
     """Flowseal ships General (EXP).bat with a capital G in some releases."""
     import zipfile as zf
@@ -435,14 +457,34 @@ def _plan(tmp_path: Path, strategies_dir: Path, name="general.bat", text=_ORIGIN
 
 
 def test_plan_adapts_a_genuinely_new_qualifier(tmp_path: Path):
+    """ALT13 is a known family now (see test_strategy_adapt's pretty-name
+    mapping test) - this uses a qualifier outside all three mapped families
+    to exercise the true "nobody has named this yet" fallback."""
     strategies_dir = tmp_path / "strategies"
     strategies_dir.mkdir()
 
-    plan = _plan(tmp_path, strategies_dir, name="general (ALT13).bat")
+    plan = _plan(tmp_path, strategies_dir, name="general (WEIRD).bat")
 
     assert plan.skipped == []
-    assert plan.added == ["General (ALT13).bat"]
-    assert "--dpi-desync-fake-quic" in plan.write["General (ALT13).bat"]
+    assert plan.added == ["General (WEIRD).bat"]
+    assert "--dpi-desync-fake-quic" in plan.write["General (WEIRD).bat"]
+
+
+def test_plan_recognizes_a_known_qualifier_family_by_its_pretty_name(tmp_path: Path):
+    """The regression this guards: general (ALT10).bat used to be added as a
+    literal duplicate of the existing Alternative 10.bat instead of being
+    recognized as an update to it."""
+    strategies_dir = tmp_path / "strategies"
+    strategies_dir.mkdir()
+    first = _plan(tmp_path, strategies_dir, name="general (ALT10).bat", version="1.10.0")
+    (strategies_dir / "Alternative 10.bat").write_text(
+        first.write["Alternative 10.bat"], encoding="utf-8"
+    )
+
+    plan = _plan(tmp_path, strategies_dir, name="general (ALT10).bat", version="1.10.1")
+
+    assert plan.added == []
+    assert plan.updated == ["Alternative 10.bat"]
 
 
 def test_a_stamped_strategy_is_rewritten_in_place(tmp_path: Path):

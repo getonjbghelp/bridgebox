@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Button } from '../components/Button'
 import { useStrings, t } from '../lib/strings'
 import { useMotionPrefs } from '../state/MotionPrefsContext'
@@ -70,6 +70,54 @@ function exportFormats(strings: ReturnType<typeof useStrings>) {
     { fmt: 'html', label: strings.logs.exportHtml },
   ] as const
 }
+
+// A log is append-only: every retained line's data never changes after it
+// arrives, only new ones get added. Without this memo, the poll tick that
+// appends a handful of new lines re-rendered and re-diffed every line ever
+// kept (up to 3000) once a second - the actual cost on this screen once
+// logging.level=debug turns a minute of gameplay into thousands of lines.
+// React.memo skips exactly the rows whose props (all primitives, or `line`
+// itself, which is only ever appended - never mutated) are unchanged.
+const LogRow = memo(function LogRow({
+  line,
+  label,
+  locale,
+  threadSeparator,
+  traceSummary,
+}: {
+  line: LogLine
+  label: string
+  locale: 'ru' | 'en'
+  threadSeparator: string
+  traceSummary: string
+}) {
+  return (
+    <div className="bb-logs__line">
+      <span className="text-mono bb-logs__time">{formatTime(line.time, locale)}</span>
+      <span className={`bb-logs__badge bb-logs__badge--${levelOf(line)}`}>{label}</span>
+      <span className="bb-logs__body">
+        <span className="text-mono bb-logs__message">{line.message}</span>
+        {line.module && (
+          <span className="text-mono bb-logs__origin">
+            {line.module}.{line.func}:{line.line}
+            {line.thread && line.thread !== 'MainThread' && (
+              <>
+                {threadSeparator}
+                {line.thread}
+              </>
+            )}
+          </span>
+        )}
+        {line.traceback && (
+          <details className="bb-logs__trace">
+            <summary>{traceSummary}</summary>
+            <pre className="text-mono">{line.traceback}</pre>
+          </details>
+        )}
+      </span>
+    </div>
+  )
+})
 
 export function LogsScreen({ active }: { active: boolean }) {
   const strings = useStrings()
@@ -253,32 +301,14 @@ export function LogsScreen({ active }: { active: boolean }) {
       <div className="bb-logs__stream">
         <div className="bb-logs__viewport" ref={viewport} onScroll={handleScroll}>
           {filtered.map((line) => (
-          <div key={line.seq} className="bb-logs__line">
-            <span className="text-mono bb-logs__time">{formatTime(line.time, locale)}</span>
-            <span className={`bb-logs__badge bb-logs__badge--${levelOf(line)}`}>
-              {LEVEL_LABEL[levelOf(line)]}
-            </span>
-            <span className="bb-logs__body">
-              <span className="text-mono bb-logs__message">{line.message}</span>
-              {line.module && (
-                <span className="text-mono bb-logs__origin">
-                  {line.module}.{line.func}:{line.line}
-                  {line.thread && line.thread !== 'MainThread' && (
-                    <>
-                      {strings.logs.threadSeparator}
-                      {line.thread}
-                    </>
-                  )}
-                </span>
-              )}
-              {line.traceback && (
-                <details className="bb-logs__trace">
-                  <summary>{strings.logs.traceSummary}</summary>
-                  <pre className="text-mono">{line.traceback}</pre>
-                </details>
-              )}
-            </span>
-          </div>
+            <LogRow
+              key={line.seq}
+              line={line}
+              label={LEVEL_LABEL[levelOf(line)]}
+              locale={locale}
+              threadSeparator={strings.logs.threadSeparator}
+              traceSummary={strings.logs.traceSummary}
+            />
           ))}
           {filtered.length === 0 && <p className="text-caption">{strings.logs.emptyState}</p>}
         </div>

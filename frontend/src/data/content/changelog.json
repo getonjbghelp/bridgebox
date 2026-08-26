@@ -1,5 +1,18 @@
 [
   {
+    "version": "0.1.4 (b1)",
+    "date": "2026-08-26",
+    "level": "minor",
+    "ru": {
+      "title": "Исправления Zapret",
+      "body": "В данном обновлении список `list-jackbox.txt` **претерпел некоторые изменения**, а конкретно были добавлены следующие домены:\n`api.jackboxgames.com`\n`api-uat.jackboxgames.com`\n`binjpipe.jackboxgames.com`\n`jackbox.tv`\n`nopus-assets.jackbox.tv`\n\n\nПомимо этого, также была **исправлена автоадаптация старых стратегий и добавление новых при обновлении Zapret.** Плюсом были **изменены некоторые анимации** и **оптимизирован размер попапов**"
+    },
+    "en": {
+      "title": "Исправления Zapret",
+      "body": "In this update, the `list-jackbox.txt` list **has undergone some changes**, specifically the following domains have been added:\n`api.jackboxgames.com`\n`api-uat.jackboxgames.com`\n`binjpipe.jackboxgames.com`\n`jackbox.tv`\n`nopus-assets.jackbox.tv`\n\n\nIn addition, **the auto‑adaptation of old strategies and the addition of new ones during the Zapret update have also been fixed.** Furthermore, **some animations have been changed, and the size of pop‑ups has been optimized.**"
+    }
+  },
+  {
     "version": "0.1.3 (b1)",
     "date": "2026-08-23",
     "level": "minor",

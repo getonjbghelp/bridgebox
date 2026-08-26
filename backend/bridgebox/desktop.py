@@ -872,9 +872,10 @@ class Api:
 
     def start_app_update_check(self) -> None:
         """Fire the background release check, if AppUpdateConfig.
-        check_on_startup is on (the default - unlike zapret's check, this one
-        is how a critical security fix reaches somebody who never opens
-        Settings).
+        check_on_startup is on. Off by default (see AppUpdateConfig) - a
+        fresh install does not phone GitHub until the user opts in, even
+        though this is also how a critical security fix would otherwise
+        reach somebody who never opens Settings.
 
         Same shape as start_startup_update_check: called from main()'s
         `shown` handler, waits STARTUP_NETWORK_CHECK_DELAY_S so this does not

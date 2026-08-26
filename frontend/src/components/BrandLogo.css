@@ -2,12 +2,18 @@
  *
  * Deliberately CSS transitions rather than framer-motion. The rail's own width
  * is a CSS transition (Sidebar.css), and the brief was that the two move as one
- * thing - a spring next to a cubic-bezier cannot be synchronous no matter how
- * they are tuned, because they are different curves. Sharing --dur-slow and
- * --ease-out makes them the same motion by construction, and it costs no JS.
+ * thing - a JS spring next to a cubic-bezier cannot be synchronous no matter how
+ * they are tuned, because one is time-based and the other is physics-based and
+ * neither knows about the other. Keeping everything in CSS makes them the same
+ * timeline by construction, and it costs no JS.
+ *
+ * That constraint used to mean "no springs at all". It does not any more:
+ * linear() expresses a sampled spring curve AS a CSS easing, so --bb-snap below
+ * is real damped-spring motion that still starts and ends on the rail's own
+ * clock. See its own comment for the physics.
  *
  * The svg keeps its full wordmark width the whole time, so no glyph is ever
- * rescaled or reflowed mid-flight - only opacity and transform move.
+ * reflowed mid-flight - only opacity and transform move.
  */
 
 /* Fixed width, and nothing here animates layout.
@@ -54,17 +60,27 @@
   height: var(--bb-logo-height);
 }
 
-/* transform-box: view-box is the modern default for SVG, but Chromium only
-   settled on it recently enough to be worth stating - without it the translate
-   below would resolve against the path's own fill box and land elsewhere. */
-.bb-logo__b--second {
+/* The second B AND the "ox" it carries - see the <g> in BrandLogo.tsx. Moving
+   the group rather than the B alone is what lets o and x ride along without
+   restating the shift in their own transforms.
+
+   transform-box: view-box is the modern default for SVG, but Chromium only
+   settled on it recently enough to be worth stating. */
+.bb-logo__tail {
   transform-box: view-box;
+  /* The rail's own width transition, exactly (Sidebar.css) - same token, same
+     curve, both directions. It briefly ran on its own sampled spring instead,
+     which put three different laws of motion in one small area: the rail on
+     --ease-out/320ms, the slot on --ease-out/320ms, and the mark inside them on
+     a 400ms spring. Sharing one curve is what makes the panel read as a single
+     object rather than parts arriving on their own schedules. */
   transition: transform var(--dur-slow) var(--ease-out);
 }
 
-.bb-sidebar[data-collapsed='true'] .bb-logo__b--second {
+.bb-sidebar[data-collapsed='true'] .bb-logo__tail {
   /* px on an SVG element means user units, so this is the measured distance
-     from the second B's left edge back to 30 units past the first B's right. */
+     from the second B's left edge back to 30 units past the first B's right.
+     Kept equal to B2_SHIFT in BrandLogo.tsx, which the monogram renders from. */
   transform: translateX(-2228.2px);
 }
 
@@ -78,19 +94,39 @@
    timeline, one curve, same as the rail/second-B pairing above. */
 .bb-logo__glyph {
   opacity: 1;
-  transition: opacity var(--dur-base) var(--ease-out);
+  /* fill-box, unlike the tail group's view-box above: that one travels a
+     measured distance across the whole mark, so it needs the mark's coordinate
+     system. These move relative to themselves, so each letter's own box is the
+     origin and the scale below shrinks it in place instead of dragging it
+     toward the viewBox corner. */
+  transform-box: fill-box;
+  transition:
+    opacity var(--dur-base) var(--ease-out),
+    transform var(--dur-base) var(--ease-out);
   transition-delay: var(--bb-glyph-in, 0ms);
 }
 
 .bb-sidebar[data-collapsed='true'] .bb-logo__glyph {
   opacity: 0;
+  /* --bb-tuck is per letter (BrandLogo.tsx): the distance back to a point
+     inside whichever B owns it. That is the whole concept - r barely moves,
+     e crosses ~65px, and the differing distances make the word telescope out
+     of the two letters instead of eight glyphs fading in unison. A single
+     shared offset here, which is what this used to be, cannot express that.
+     Falls back to a plain nudge if a letter ever ships without one.
+
+     Translate only. A scale rode along with this for a while, which meant
+     eight letters each interpolating two transform components plus opacity at
+     once - shimmer rather than motion at this size, and one more thing to be
+     slightly out of step. "Выезжает из b" is a slide; sliding is all it does. */
+  transform: translateX(var(--bb-tuck, -90px));
   transition-delay: var(--bb-glyph-out, 0ms);
 }
 
 /* Settings' "Анимации интерфейса", same gate the rail and the collapse chevron
    already use. Off means the two states swap, which is the point. */
 :root[data-animations='off'] .bb-logo-slot,
-:root[data-animations='off'] .bb-logo__b--second,
+:root[data-animations='off'] .bb-logo__tail,
 :root[data-animations='off'] .bb-logo__glyph {
   transition: none;
 }

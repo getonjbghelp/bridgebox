@@ -181,8 +181,24 @@ def test_a_hostile_dpi_desync_value_never_reaches_the_rendered_bat(hostile_value
     assert "redirected" not in result.content
 
 
+def test_suggest_filename_maps_known_qualifier_families_to_their_pretty_name():
+    """The bug this guards: without this mapping, an update recognized none
+    of these by filename and added every one as a duplicate of a strategy
+    BridgeBox already ships under its hand-picked name."""
+    assert adapt.suggest_filename("general (ALT13).bat") == "Alternative 13.bat"
+    assert adapt.suggest_filename("general (ALT).bat") == "Alternative 1.bat"
+    assert adapt.suggest_filename("general (ALT2).bat") == "Alternative 2.bat"
+    assert adapt.suggest_filename("general (SIMPLE FAKE).bat") == "Simple Fake.bat"
+    assert adapt.suggest_filename("general (SIMPLE FAKE ALT).bat") == "Simple Fake 1.bat"
+    assert adapt.suggest_filename("general (SIMPLE FAKE ALT2).bat") == "Simple Fake 2.bat"
+    assert adapt.suggest_filename("general (FAKE TLS AUTO).bat") == "Fake TLS Auto.bat"
+    assert adapt.suggest_filename("general (FAKE TLS AUTO ALT).bat") == "Fake TLS Auto 1.bat"
+    assert adapt.suggest_filename("general (FAKE TLS AUTO ALT3).bat") == "Fake TLS Auto 3.bat"
+
+
 def test_suggest_filename_keeps_an_unseen_qualifier_verbatim():
-    assert adapt.suggest_filename("general (ALT13).bat") == "General (ALT13).bat"
+    assert adapt.suggest_filename("general (EXP).bat") == "General (EXP).bat"
+    assert adapt.suggest_filename("general (WEIRD).bat") == "General (WEIRD).bat"
     assert adapt.suggest_filename("general.bat") == "General.bat"
 
 

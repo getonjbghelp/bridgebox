@@ -126,10 +126,19 @@ export interface Tester extends PersonBase {
   contribution: Record<Locale, string>
 }
 
+/** A thank-you that isn't a donation, a bug report, or testing - an idea, art,
+ * moral support, anything worth naming that the other three categories don't
+ * fit. Deliberately one free-text field: forcing it into testers/bughunters'
+ * shape would misdescribe whatever it actually was. */
+export interface Other extends PersonBase {
+  reason: Record<Locale, string>
+}
+
 export interface PeopleData {
   donators: Donator[]
   bughunters: BugHunter[]
   testers: Tester[]
+  other: Other[]
 }
 
 export const PEOPLE = peopleData as PeopleData

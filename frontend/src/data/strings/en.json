@@ -375,9 +375,6 @@
     "sourcePublic": "Official GitHub repository",
     "linksTitle": "Links",
     "peopleTitle": "Thanks",
-    "peopleTabDonators": "Donators",
-    "peopleTabBughunters": "Bug hunters",
-    "peopleTabTesters": "Testers",
     "peopleDonatorDate": "Date",
     "peopleDonatorPlatform": "Platform",
     "peopleDonatorAmount": "Amount",
@@ -386,7 +383,8 @@
     "peopleBughunterLink": "Issue/commit link",
     "peopleTesterTested": "What they tested",
     "peopleTesterEnvironment": "Environment",
-    "peopleTesterContribution": "Key contribution"
+    "peopleTesterContribution": "Key contribution",
+    "peopleOtherReason": "Thanked for"
   },
   "appUpdate": {
     "modalTitle": "Version {latest} is available",

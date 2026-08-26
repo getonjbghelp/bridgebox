@@ -145,37 +145,7 @@
   color: var(--color-danger);
 }
 
-.bb-changelog__body p {
-  margin: 0 0 var(--space-2);
-  font-size: var(--text-base);
-  line-height: var(--leading-normal);
-  color: var(--color-text-secondary);
-}
-
-.bb-changelog__body ul {
-  margin: 0;
-  padding-left: var(--space-5);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  font-size: var(--text-base);
-  line-height: var(--leading-normal);
-  color: var(--color-text-secondary);
-  /* Explicit: global.css leaves list markers to the UA, which rendered these
-     as hollow circles - a nested-list marker on a top-level list. */
-  list-style: disc;
-}
-
-.bb-changelog__body code {
-  font-family: var(--font-mono);
-  font-size: var(--text-sm);
-  padding: 1px 5px;
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-sunken);
-  color: var(--color-text-primary);
-}
-
-.bb-changelog__body strong {
-  font-weight: var(--weight-semibold);
-  color: var(--color-text-primary);
-}
+/* Paragraph, list, code and strong styling now comes from .bb-prose in
+   global.css, shared with the update modal's release notes - both are
+   renderChangelogBody's output and had drifted into two copies of the same
+   rules, one of which was missing half of them. */

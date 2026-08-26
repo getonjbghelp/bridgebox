@@ -472,10 +472,32 @@ def extract_original_strategies(zip_path: Path, dest: Path) -> dict[str, Path]:
         if len(members) > MAX_MEMBERS:
             raise ValueError(f"archive holds {len(members)} members - refusing")
 
+        file_parts = [
+            PurePosixPath(info.filename.replace("\\", "/")).parts
+            for info in members
+            if not info.is_dir()
+        ]
+        # GitHub packages a release's assets as "reponame-version/..." - every
+        # file one level deeper than it looks, which made every general*.bat
+        # in 1.10.2's zip fail the top-level check below and this function
+        # return nothing at all (confirmed against a real download: 0 added,
+        # 0 skipped - not even logged as a miss). Only stripped when literally
+        # every file shares that one root, so the nested-decoy protection this
+        # function exists for (see the class comment on _ORIGINAL_STRATEGY_RE)
+        # still applies to a real top-level zip with a genuine subfolder in it.
+        roots = {parts[0] for parts in file_parts if parts}
+        # Both conditions matter: a single shared root is also what a zip with
+        # exactly one true top-level file looks like (that file's own name IS
+        # the "root"), and stripping there would eat the filename itself.
+        # Only a root every file sits BELOW qualifies as a wrapper folder.
+        strip_root = len(roots) == 1 and all(len(parts) > 1 for parts in file_parts)
+
         for info in members:
             if info.is_dir():
                 continue
             parts = PurePosixPath(info.filename.replace("\\", "/")).parts
+            if strip_root:
+                parts = parts[1:]
             if len(parts) != 1 or not _ORIGINAL_STRATEGY_RE.match(parts[0]):
                 continue
             name = parts[0]

@@ -1101,15 +1101,16 @@ def test_start_app_update_check_does_nothing_when_the_setting_is_off(tmp_path: P
     assert api.app_update_check()["started"] is False
 
 
-def test_app_update_check_is_on_by_default(tmp_path: Path):
-    """Unlike zapret's UpdateConfig, this one defaults ON - see
-    AppUpdateConfig's docstring for why (it is how a critical fix reaches
-    somebody who never opens Settings)."""
-    assert Config().app_update.check_on_startup is True
+def test_app_update_check_is_off_by_default(tmp_path: Path):
+    """A fresh install must not phone GitHub before the user opts in - see
+    AppUpdateConfig's docstring."""
+    assert Config().app_update.check_on_startup is False
 
 
 def test_start_app_update_check_runs_when_the_setting_is_on(tmp_path: Path, monkeypatch):
-    api = _make_api(tmp_path)  # check_on_startup defaults to True
+    config = Config()
+    config.app_update.check_on_startup = True
+    api = _make_api(tmp_path, config=config)
 
     async def fake_check_app_update_coro():
         return {
@@ -1132,7 +1133,9 @@ def test_start_app_update_check_runs_when_the_setting_is_on(tmp_path: Path, monk
 
 
 def test_start_app_update_check_waits_the_configured_delay_first(tmp_path: Path, monkeypatch):
-    api = _make_api(tmp_path)
+    config = Config()
+    config.app_update.check_on_startup = True
+    api = _make_api(tmp_path, config=config)
     api._startup_check_delay_s = 3.0
     calls = []
 
@@ -1157,7 +1160,9 @@ def test_start_app_update_check_waits_the_configured_delay_first(tmp_path: Path,
 def test_a_second_start_app_update_check_does_not_pile_onto_a_live_run(tmp_path: Path):
     """`shown` fires again on every restore from the tray - a second call
     while one is in flight must not start a second network request."""
-    api = _make_api(tmp_path)
+    config = Config()
+    config.app_update.check_on_startup = True
+    api = _make_api(tmp_path, config=config)
 
     class NeverDoneFuture:
         def done(self):

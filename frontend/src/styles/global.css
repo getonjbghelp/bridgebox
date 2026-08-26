@@ -117,6 +117,54 @@ a:focus-visible {
   text-decoration: underline;
 }
 
+/* Prose produced by lib/richText.tsx's renderChangelogBody - the version
+   history behind the Beta badge and the release notes in the update modal are
+   the same renderer's output, so they share one set of rules instead of each
+   component restyling <p>/<ul>/<code>/<strong> for itself.
+   The update modal styled only <p> and <ul>, so a release note's inline `code`
+   (which the real notes use) fell through to unstyled UA monospace and its
+   **bold** never got the brighter colour that makes emphasis readable against
+   secondary body text. */
+.bb-prose p {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
+  color: var(--color-text-secondary);
+}
+
+.bb-prose ul {
+  margin: 0 0 var(--space-2);
+  padding-left: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
+  color: var(--color-text-secondary);
+  /* Explicit: the UA renders an unstyled top-level list with the marker it
+     reserves for nested ones. */
+  list-style: disc;
+}
+
+.bb-prose code {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  padding: 1px 5px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-sunken);
+  color: var(--color-text-primary);
+}
+
+.bb-prose strong {
+  font-weight: var(--weight-semibold);
+  color: var(--color-text-primary);
+}
+
+/* No trailing gap under the last block - the container owns its own padding. */
+.bb-prose > :last-child {
+  margin-bottom: 0;
+}
+
 /* One focus ring for the whole app. :focus-visible rather than :focus so it
    shows for keyboard users without boxing every mouse click. */
 :focus-visible {

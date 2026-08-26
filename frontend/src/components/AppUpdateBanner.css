@@ -53,20 +53,13 @@
 /* The release body, rendered through renderChangelogBody - same paragraph/
    list rhythm as the zapret update modal's changelog, so the two don't read
    as two different kinds of text inside otherwise-identical dialogs. */
-.bb-update-modal__notes {
-  font-size: 13px;
-  line-height: 1.6;
-  color: var(--color-text-secondary);
-}
-.bb-update-modal__notes p {
-  margin: 0 0 var(--space-3);
-}
-.bb-update-modal__notes ul {
-  margin: 0 0 var(--space-3);
-  padding-left: var(--space-5);
-}
-.bb-update-modal__notes :last-child {
-  margin-bottom: 0;
+/* Typography comes from .bb-prose (global.css); this only sets the notes'
+   own rhythm inside the modal. The paragraph gap is a step wider than the
+   changelog's because release notes are read once, in a dialog the user wants
+   to get through, not scanned as a list of versions. */
+.bb-update-modal__notes > p,
+.bb-update-modal__notes > ul {
+  margin-bottom: var(--space-3);
 }
 
 .bb-update-modal__error {

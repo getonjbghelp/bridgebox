@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { useState, type ReactNode } from 'react'
 import { useMotionPrefs } from '../state/MotionPrefsContext'
-import { useSpringTransition } from '../lib/motion'
+import { useMicroTransition } from '../lib/motion'
 import { useStrings } from '../lib/strings'
 import { BrandLogo, LOGO_HEIGHT, MONOGRAM_WIDTH, WORDMARK_WIDTH } from './BrandLogo'
 import { BugReportModal } from './BugReportModal'
@@ -38,8 +38,10 @@ export function Sidebar({
   const strings = useStrings()
   const NAV_ITEMS = navItems(strings)
   // Was a hardcoded spring, so the sliding pill kept animating after the user
-  // turned animations off.
-  const pillTransition = useSpringTransition()
+  // turned animations off. Micro, not the default spring: the pill's travel
+  // is a couple nav rows, not a whole surface, and the modal-scaled duration
+  // made it look like it was lagging behind the click.
+  const pillTransition = useMicroTransition()
   const { sidebarCollapsed, setSidebarCollapsed } = useMotionPrefs()
   const [bugReportOpen, setBugReportOpen] = useState(false)
 

@@ -37,7 +37,7 @@ PYPROJECT_PATH = REPO_ROOT / "backend" / "pyproject.toml"
 
 LOCALES = ("ru", "en")
 LEVELS = ("minor", "major", "critical")
-PEOPLE_CATEGORIES = ("donators", "bughunters", "testers")
+PEOPLE_CATEGORIES = ("donators", "bughunters", "testers", "other")
 
 _PYPROJECT_VERSION_RE = re.compile(r'^\s*version\s*=\s*"([^"]+)"', re.MULTILINE)
 # Same two patterns backend/bridgebox/version.py derives the Beta badge's
@@ -283,6 +283,12 @@ _PEOPLE_SCHEMA: dict[str, list[tuple[str, str, bool]]] = {
         ("tested", "locale", True),
         ("environment", "text", True),
         ("contribution", "locale", True),
+    ],
+    # Everyone who earned a thank-you for something that isn't a donation, a
+    # bug report, or testing - one free-text field, deliberately not shaped
+    # like the other three.
+    "other": [
+        ("reason", "locale", True),
     ],
 }
 
@@ -595,11 +601,12 @@ PAGE_TEMPLATE = r"""<!doctype html>
   </section>
 
   <section id="panel-people" class="panel">
-    <p class="hint">Донатеры, багхантеры и тестеры, показанные на экране «Инфо». Каждая карточка — один человек; массовый импорт ниже добавляет карточки из вставленной таблицы, а не заменяет уже существующие.</p>
+    <p class="hint">Донатеры, багхантеры, тестеры и прочие благодарности, показанные на экране «Инфо». Каждая карточка — один человек; массовый импорт ниже добавляет карточки из вставленной таблицы, а не заменяет уже существующие.</p>
     <div class="subtabs" id="people-subtabs">
       <button class="subtab active" data-sub="donators">Донатеры</button>
       <button class="subtab" data-sub="bughunters">Багхантеры</button>
       <button class="subtab" data-sub="testers">Тестеры</button>
+      <button class="subtab" data-sub="other">Прочее</button>
     </div>
 
     <div class="subpanel active" data-sub-panel="donators">
@@ -633,6 +640,17 @@ PAGE_TEMPLATE = r"""<!doctype html>
       </details>
       <div id="list-testers"></div>
       <button class="add-card" id="add-testers" type="button">+ Добавить тестера</button>
+    </div>
+
+    <div class="subpanel" data-sub-panel="other">
+      <details class="bulk-import">
+        <summary>Массовый импорт из таблицы (TSV/CSV)</summary>
+        <p class="subtle">Столбцы: Ник; За что благодарность, на русском.</p>
+        <textarea id="bulk-other" placeholder="Ник;Придумал название для функции автовставки"></textarea>
+        <button class="ghost" id="import-other" type="button" style="margin-top:10px">Импортировать строки</button>
+      </details>
+      <div id="list-other"></div>
+      <button class="add-card" id="add-other" type="button">+ Добавить запись</button>
     </div>
 
     <button class="primary save-bar" id="save-people">Сохранить благодарности</button>
@@ -976,6 +994,9 @@ const PEOPLE_SCHEMA = {
     ['tested', 'locale', true, 'Что тестировал(а)'],
     ['environment', 'text', true, 'Конфигурация/ОС'],
     ['contribution', 'locale', true, 'Ключевой вклад'],
+  ],
+  other: [
+    ['reason', 'locale', true, 'За что благодарность'],
   ],
 };
 const PEOPLE_CATEGORIES = Object.keys(PEOPLE_SCHEMA);

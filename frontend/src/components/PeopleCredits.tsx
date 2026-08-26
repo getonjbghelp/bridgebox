@@ -1,20 +1,20 @@
 import { AnimatePresence } from 'framer-motion'
 import { useState, type ReactNode } from 'react'
 import { Section } from './Section'
-import { Segmented, type SegmentedOption } from './Segmented'
 import { Modal } from './Modal'
 import { IconInfo } from './icons'
 import { renderRich } from '../lib/richText'
-import { PEOPLE, localeText, type BugHunter, type Donator, type Tester } from '../lib/content'
+import { PEOPLE, localeText, type BugHunter, type Donator, type Other, type Tester } from '../lib/content'
 import { useStrings } from '../lib/strings'
 import { useMotionPrefs } from '../state/MotionPrefsContext'
 import './PeopleCredits.css'
 
-type Category = 'donators' | 'bughunters' | 'testers'
-type Person = Donator | BugHunter | Tester
+type Category = 'donators' | 'bughunters' | 'testers' | 'other'
+type Person = Donator | BugHunter | Tester | Other
 
 /**
- * "Спасибо" - donators, bug hunters, testers. Distinct from the open-source
+ * "Спасибо" - donators, bug hunters, testers, and anyone else worth naming
+ * for something that doesn't fit those three. Distinct from the open-source
  * attribution ticker on HomeScreen (data/credits.ts): this is people who
  * supported THIS project, not the libraries it's built on. Data comes from
  * PEOPLE (lib/content.ts), written by tools/build_content.py.
@@ -23,45 +23,35 @@ export function PeopleCredits() {
   const strings = useStrings()
   const [openPerson, setOpenPerson] = useState<{ category: Category; person: Person } | null>(null)
 
-  const tabs: { value: Category; label: string; list: Person[] }[] = [
-    { value: 'donators' as const, label: strings.info.peopleTabDonators, list: PEOPLE.donators as Person[] },
-    {
-      value: 'bughunters' as const,
-      label: strings.info.peopleTabBughunters,
-      list: PEOPLE.bughunters as Person[],
-    },
-    { value: 'testers' as const, label: strings.info.peopleTabTesters, list: PEOPLE.testers as Person[] },
-  ].filter((tab) => tab.list.length > 0)
-
-  const [category, setCategory] = useState<Category | null>(null)
-  const active = tabs.find((tab) => tab.value === category) ?? tabs[0]
+  // One flat list, not a tab per category: everybody here is being thanked,
+  // and which bucket a name sits in is a detail of the entry, not a filter
+  // the reader came to apply. The category still travels with each person so
+  // the modal knows which fields to show. Keyed by category+id because the
+  // same id may legitimately appear in two categories (someone who donated
+  // AND tested) - see validate_people's "same id in two categories is fine".
+  const everyone: { category: Category; person: Person }[] = [
+    ...PEOPLE.donators.map((person) => ({ category: 'donators' as const, person: person as Person })),
+    ...PEOPLE.bughunters.map((person) => ({ category: 'bughunters' as const, person: person as Person })),
+    ...PEOPLE.testers.map((person) => ({ category: 'testers' as const, person: person as Person })),
+    ...PEOPLE.other.map((person) => ({ category: 'other' as const, person: person as Person })),
+  ]
 
   // Nothing to show until build_content.py has written at least one entry -
   // same rule InfoScreen already applies to the Links section.
-  if (!active) return null
-
-  const options: SegmentedOption<Category>[] = tabs.map((tab) => ({ value: tab.value, label: tab.label }))
+  if (everyone.length === 0) return null
 
   return (
     <Section title={strings.info.peopleTitle}>
-      {tabs.length > 1 && (
-        <Segmented
-          value={active.value}
-          options={options}
-          onChange={setCategory}
-          ariaLabel={strings.info.peopleTitle}
-        />
-      )}
       <div className="bb-people__pills">
-        {active.list.map((person) => (
+        {everyone.map((entry) => (
           <button
-            key={person.id}
+            key={`${entry.category}:${entry.person.id}`}
             type="button"
             className="bb-people__pill"
-            onClick={() => setOpenPerson({ category: active.value, person })}
+            onClick={() => setOpenPerson(entry)}
           >
-            <PersonAvatar person={person} />
-            <span className="bb-people__pill-name">{person.name}</span>
+            <PersonAvatar person={entry.person} />
+            <span className="bb-people__pill-name">{entry.person.name}</span>
             <IconInfo size={14} />
           </button>
         ))}
@@ -131,15 +121,24 @@ function PersonDetails({ category, person }: { category: Category; person: Perso
     )
   }
 
-  const tester = person as Tester
+  if (category === 'testers') {
+    const tester = person as Tester
+    return (
+      <dl className="bb-people__detail-list">
+        <Detail label={strings.info.peopleTesterTested} value={localeText(tester.tested, locale)} />
+        <Detail label={strings.info.peopleTesterEnvironment} value={tester.environment} />
+        <Detail
+          label={strings.info.peopleTesterContribution}
+          value={renderRich(localeText(tester.contribution, locale))}
+        />
+      </dl>
+    )
+  }
+
+  const other = person as Other
   return (
     <dl className="bb-people__detail-list">
-      <Detail label={strings.info.peopleTesterTested} value={localeText(tester.tested, locale)} />
-      <Detail label={strings.info.peopleTesterEnvironment} value={tester.environment} />
-      <Detail
-        label={strings.info.peopleTesterContribution}
-        value={renderRich(localeText(tester.contribution, locale))}
-      />
+      <Detail label={strings.info.peopleOtherReason} value={renderRich(localeText(other.reason, locale))} />
     </dl>
   )
 }

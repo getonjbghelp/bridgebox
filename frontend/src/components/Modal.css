@@ -53,7 +53,11 @@
   box-shadow: var(--shadow-lg);
   display: flex;
   flex-direction: column;
-  max-height: min(640px, 82dvh);
+  /* Was min(640px, 82dvh): the connect guide's numbered steps plus their
+     reference screenshots routinely filled that and forced a scrollbar a
+     couple of steps in - a taller ceiling means one screenful covers a
+     whole step's text and image together instead of splitting it. */
+  max-height: min(760px, 88dvh);
 }
 
 .bb-modal__header {

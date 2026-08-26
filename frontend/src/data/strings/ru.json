@@ -375,9 +375,6 @@
     "sourcePublic": "Официальный репозиторий GitHub",
     "linksTitle": "Ссылки",
     "peopleTitle": "Благодарности",
-    "peopleTabDonators": "Донатеры",
-    "peopleTabBughunters": "Багхантеры",
-    "peopleTabTesters": "Тестеры",
     "peopleDonatorDate": "Дата",
     "peopleDonatorPlatform": "Платформа",
     "peopleDonatorAmount": "Сумма",
@@ -386,7 +383,8 @@
     "peopleBughunterLink": "Ссылка на issue/коммит",
     "peopleTesterTested": "Что тестировал(а)",
     "peopleTesterEnvironment": "Конфигурация",
-    "peopleTesterContribution": "Ключевой вклад"
+    "peopleTesterContribution": "Ключевой вклад",
+    "peopleOtherReason": "За что благодарность"
   },
   "appUpdate": {
     "modalTitle": "Доступна версия {latest}",

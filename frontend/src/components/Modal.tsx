@@ -19,7 +19,7 @@ interface ModalProps {
  * none of them - no focus trap, no Escape, no role/aria-modal, no scroll
  * lock. WebView2 is Chromium, so support is not in question.
  */
-export function Modal({ title, onClose, children, maxWidth = 480 }: ModalProps) {
+export function Modal({ title, onClose, children, maxWidth = 560 }: ModalProps) {
   const strings = useStrings()
   const transition = useSpringTransition()
   const ref = useRef<HTMLDialogElement>(null)
@@ -82,9 +82,9 @@ export function Modal({ title, onClose, children, maxWidth = 480 }: ModalProps) 
       <motion.div
         className="bb-modal"
         style={{ maxWidth }}
-        initial={{ opacity: 0, scale: 0.96, y: 8 }}
+        initial={{ opacity: 0, scale: 0.93, y: 14 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.97, y: 4 }}
+        exit={{ opacity: 0, scale: 0.96, y: 6 }}
         transition={transition}
       >
         <div className="bb-modal__header">

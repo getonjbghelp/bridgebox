@@ -126,14 +126,14 @@ class UpdateConfig(BaseModel):
 class AppUpdateConfig(BaseModel):
     """Checking GitHub for a newer BridgeBox release - see app_update.py.
 
-    On by default, unlike UpdateConfig above: that one is a convenience
-    check for an optional payload, this one is how a security-critical fix
-    (see app_update.CRITICAL_MARKER) reaches somebody who never opens
-    Settings. It is also never blocking (see desktop.Api.
-    start_app_update_check's startup delay), so "on by default" costs an
+    Off by default, per product decision: even though this is also how a
+    security-critical fix (see app_update.CRITICAL_MARKER) would reach
+    somebody who never opens Settings, a fresh install must not phone GitHub
+    before the user has chosen to. It is also never blocking (see desktop.Api.
+    start_app_update_check's startup delay), so turning it on later costs an
     unreachable GitHub nothing but a silently failed background request."""
 
-    check_on_startup: bool = True
+    check_on_startup: bool = False
     # The last version whose update modal the user has already seen and
     # closed - suppresses the MODAL for that version on future launches so
     # it does not nag every time. Deliberately does NOT gate the critical

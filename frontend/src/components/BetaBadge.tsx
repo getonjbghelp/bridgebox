@@ -147,7 +147,7 @@ export function BetaBadge() {
                       {' · '}
                       {formatDate(entry.date, locale)}
                     </p>
-                    <div className="bb-changelog__body">{renderChangelogBody(text.body)}</div>
+                    <div className="bb-changelog__body bb-prose">{renderChangelogBody(text.body)}</div>
                   </li>
                 )
               })}

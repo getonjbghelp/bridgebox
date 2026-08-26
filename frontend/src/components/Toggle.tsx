@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion'
-import { useSpringTransition } from '../lib/motion'
+import { useMicroTransition } from '../lib/motion'
 import './Toggle.css'
 
 interface ToggleProps {
@@ -11,7 +11,7 @@ interface ToggleProps {
 }
 
 export function Toggle({ checked, onChange, size = 'sm', label, disabled }: ToggleProps) {
-  const transition = useSpringTransition()
+  const transition = useMicroTransition()
 
   return (
     <button
