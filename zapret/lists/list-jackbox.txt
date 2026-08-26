@@ -13,6 +13,11 @@ bundles.jackbox.tv
 uuid.jackbox.tv
 jackboxgames.com
 www.jackboxgames.com
+api.jackboxgames.com
+api-uat.jackboxgames.com
+binjpipe.jackboxgames.com
+jackbox.tv
+nopus-assets.jackbox.tv
 
 # --- Blobcast API v1 ---
 blobcast.jackboxgames.com
