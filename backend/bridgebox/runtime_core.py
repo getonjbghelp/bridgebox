@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from pathlib import Path
 
@@ -9,11 +10,13 @@ from aiohttp import web
 
 from . import i18n
 from .config import Config
+from .diagnostics import STRATEGY_SETTLE_S
 from .paths import resolve_project_path
 from .server.app import build_ssl_context as _build_ssl_context
 from .server.factory import BLOBCAST_SOCKETIO_APP
 from .server.factory import build_full_app as _build_full_app
 from .server.app import run_server as _run_server
+from .server.net_trace import build_trace_config
 from .server.relay import AiohttpWsConnector
 from .server.rooms import AiohttpUpstreamClient
 from .tls.ca import CA_CERT_FILENAME, CA_INSTALLED_MARKER
@@ -46,6 +49,14 @@ def _idle_status(config: Config, *, cert_installed: bool = False, notice: str | 
 CONSOLE_CLOSED_NOTICE = "Консоль Zapret была закрыта пользователем. Мост остановлен."
 
 
+def _default_session_factory() -> aiohttp.ClientSession:
+    """The real default - wired here, not as a bare `aiohttp.ClientSession`
+    class reference, so every test's `session_factory=...` fake keeps taking
+    zero arguments. Only the production path gains the DNS/connect/reuse
+    tracing; nothing about the DI surface changes."""
+    return aiohttp.ClientSession(trace_configs=[build_trace_config()])
+
+
 class RuntimeCore:
     """Pure async orchestration for the BridgeBox server + Zapret lifecycle.
     All I/O is injected (constructor defaults point at the real
@@ -60,7 +71,7 @@ class RuntimeCore:
         config: Config,
         project_root: Path,
         zapret_process: ZapretProcess | None = None,
-        session_factory=aiohttp.ClientSession,
+        session_factory=_default_session_factory,
         build_full_app=_build_full_app,
         run_server=_run_server,
         build_ssl_context=_build_ssl_context,
@@ -86,6 +97,8 @@ class RuntimeCore:
         self._resolve_strategy = resolve_strategy
 
         self._session: aiohttp.ClientSession | None = None
+        self._http_client = None
+        self._prewarm_task: asyncio.Task | None = None
         self._runner: web.AppRunner | None = None
         self._socketio_runner: web.AppRunner | None = None
         self._status: dict = _idle_status(config)
@@ -252,6 +265,7 @@ class RuntimeCore:
             raise
 
         self._session = session
+        self._http_client = http_client
         self._runner = runner
         self._socketio_runner = socketio_runner
         if socketio_runner is not None:
@@ -302,13 +316,57 @@ class RuntimeCore:
             "certInstalled": cert_installed,
             "zapretNotice": None,
         }
+        self._prewarm_task = asyncio.create_task(self._prewarm_upstream())
         return self.status()
+
+    async def _prewarm_upstream(self) -> None:
+        """Best-effort: open the TLS connection to both the active Ecast AND
+        Blobcast upstreams while the user is still looking at "Мост запущен",
+        so the keep-alive connection AiohttpUpstreamClient's session pools
+        per host is already live by the time the game's first REST call
+        (room creation, or Blobcast's own GET /room) makes its own request -
+        the request that would otherwise pay a full TCP+TLS handshake on top
+        of zapret's own fragmentation overhead right when the user is
+        waiting on it. Idea borrowed from Flowseal's tg-ws-proxy, whose WS
+        pool warms connections the same way before a client needs one (see
+        CREDITS.md).
+
+        Waits for WinDivert to actually be in the packet path first - the
+        same settle time diagnostics.py's strategy suite uses. Firing
+        earlier would just be a plain cold connect zapret never touched, no
+        different from not pre-warming at all.
+
+        Both upstreams in parallel, not sequentially: neither depends on the
+        other, and halving the exposure window before the user might act
+        costs nothing extra to write. Silent on failure by design: if either
+        doesn't land in time, that game's own first request just does its
+        normal cold connect, exactly as before this existed."""
+        if self._config.zapret.enabled:
+            await asyncio.sleep(STRATEGY_SETTLE_S)
+        http_client = self._http_client
+        if http_client is None:
+            return
+        upstreams = [self._config.profiles.active(kind).upstream for kind in ("ecast", "blobcast")]
+        await asyncio.gather(*(self._prewarm_one(http_client, upstream) for upstream in upstreams))
+
+    async def _prewarm_one(self, http_client, upstream: str) -> None:
+        try:
+            await http_client.request("GET", upstream, headers={}, data=None)
+            logger.debug("upstream connection pre-warmed: %s", upstream)
+        except Exception as exc:
+            logger.debug("upstream pre-warm failed (harmless): %s", exc)
 
     async def stop(self) -> dict:
         async with self._lock():
             return await self._stop()
 
     async def _stop(self) -> dict:
+        if self._prewarm_task is not None:
+            self._prewarm_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._prewarm_task
+            self._prewarm_task = None
+
         if self._zapret_process.is_running:
             self._zapret_process.stop()
             logger.info("zapret stopped")
@@ -326,6 +384,7 @@ class RuntimeCore:
         if self._session is not None:
             await self._session.close()
             self._session = None
+            self._http_client = None
 
         self._status = _idle_status(
             self._config,

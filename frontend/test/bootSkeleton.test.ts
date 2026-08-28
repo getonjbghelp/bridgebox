@@ -49,6 +49,29 @@ function bootVar(name: string, scope: 'light' | 'dark'): string {
   return match[1].trim().toLowerCase()
 }
 
+function opacityTransition(selector: string): { duration: number; curve: number[] } {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const rule = html.match(new RegExp(`${escaped}\\s*\\{[^}]*transition:\\s*opacity\\s+(\\d+)ms\\s+cubic-bezier\\(([^)]+)\\)`, 's'))
+  assert.ok(rule, `${selector} opacity transition not found`)
+  return {
+    duration: Number(rule[1]),
+    curve: rule[2].split(',').map((value) => Number(value.trim())),
+  }
+}
+
+function bezierProgressAt(x: number, [x1, y1, x2, y2]: number[]): number {
+  const point = (t: number, a: number, b: number) =>
+    3 * (1 - t) ** 2 * t * a + 3 * (1 - t) * t ** 2 * b + t ** 3
+  let low = 0
+  let high = 1
+  for (let i = 0; i < 30; i += 1) {
+    const mid = (low + high) / 2
+    if (point(mid, x1, x2) < x) low = mid
+    else high = mid
+  }
+  return point((low + high) / 2, y1, y2)
+}
+
 test('the skeleton background matches the real one in both themes', () => {
   // A mismatch is not a style nit: it is a visible flash at the exact moment
   // the app is trying to look like it started instantly.
@@ -81,6 +104,18 @@ test('nothing blocking is loaded ahead of the skeleton', () => {
   assert.ok(
     !/<script(?![^>]*\btype="module")[^>]*\bsrc=/.test(head),
     'no blocking external script before the skeleton',
+  )
+})
+
+test('the handoff remains visible through a busy WebView2 startup', () => {
+  const root = opacityTransition('#root')
+  const boot = opacityTransition('#bb-boot.bb-boot--done')
+
+  assert.deepEqual(root, boot, 'both sides of the crossfade must use the same timing')
+  assert.ok(root.duration >= 480, 'a short transition is swallowed by WebView2 startup work')
+  assert.ok(
+    bezierProgressAt(0.5, root.curve) <= 0.6,
+    'a front-loaded curve turns a dropped startup frame into a hard cut',
   )
 })
 

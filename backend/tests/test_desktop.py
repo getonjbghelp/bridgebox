@@ -1,4 +1,5 @@
 import json
+import shutil
 import sys
 import threading
 import time
@@ -8,6 +9,11 @@ import pytest
 
 from bridgebox import desktop
 from bridgebox import integrity
+from bridgebox.api import app_update as desktop_app_update
+from bridgebox.api import diagnostics as desktop_diagnostics
+from bridgebox.api import system as desktop_system
+from bridgebox.api import zapret as desktop_zapret
+from bridgebox.api.steam_launch import STEAM_LAUNCH_API_TIMEOUT_S
 from bridgebox.config import Config
 from bridgebox.log_buffer import LogBuffer
 from bridgebox.window_chrome import THEMED_FULL
@@ -375,6 +381,26 @@ def test_api_list_strategies_groups_real_bat_files(tmp_path: Path):
     assert [s["key"] for s in result["groups"]["Альтернативы"]] == ["alternative-1"]
 
 
+def test_api_list_strategies_flags_aggressive_ones(tmp_path: Path):
+    strategies_dir = tmp_path / "zapret" / "strategies"
+    strategies_dir.mkdir(parents=True)
+    (strategies_dir / "General.bat").write_text(
+        "@echo off\nwinws.exe --dpi-desync=fake --dpi-desync-fooling=ts\n"
+    )
+    (strategies_dir / "Alternative 5.bat").write_text(
+        "@echo off\nwinws.exe --dpi-desync=syndata,multidisorder\n"
+    )
+    config = Config()
+    config.zapret.dir = "zapret"
+    api = _make_api(tmp_path, config=config)
+
+    result = api.list_strategies()
+
+    by_key = {s["key"]: s for group in result["groups"].values() for s in group}
+    assert by_key["general"]["aggressive"] is False
+    assert by_key["alternative-5"]["aggressive"] is True
+
+
 def test_api_list_strategies_missing_dir_returns_error_not_raise(tmp_path: Path):
     config = Config()
     config.zapret.dir = "does-not-exist"
@@ -416,7 +442,7 @@ async def test_api_test_connection_ping_failure_does_not_block_room_creation(
             for name, _ in targets
         }
 
-    monkeypatch.setattr(desktop, "probe_targets", failing_probe)
+    monkeypatch.setattr(desktop_diagnostics, "probe_targets", failing_probe)
 
     class FakeUpstream:
         async def request(self, method, url, *, headers, data):
@@ -474,7 +500,7 @@ async def test_api_test_connection_full_round_trip_against_a_real_local_server(
     _test_connection_coro's docstring for why that step was dropped."""
     import json
 
-    monkeypatch.setattr(desktop, "probe_targets", _fake_probe_targets)
+    monkeypatch.setattr(desktop_diagnostics, "probe_targets", _fake_probe_targets)
 
     from bridgebox.server.app import build_ssl_context, run_server
     from bridgebox.server.factory import build_full_app
@@ -558,7 +584,7 @@ async def test_test_connection_still_succeeds_when_the_room_cannot_be_closed(
     and must never turn into a failed connection test."""
     import json
 
-    monkeypatch.setattr(desktop, "probe_targets", _fake_probe_targets)
+    monkeypatch.setattr(desktop_diagnostics, "probe_targets", _fake_probe_targets)
 
     from bridgebox.server.app import build_ssl_context, run_server
     from bridgebox.server.factory import build_full_app
@@ -638,7 +664,7 @@ async def test_api_test_connection_full_round_trip_with_the_real_host_field_shap
     from bridgebox.server.rooms import UpstreamResponse
     from bridgebox.tls.ca import generate_leaf_cert
 
-    monkeypatch.setattr(desktop, "probe_targets", _fake_probe_targets)
+    monkeypatch.setattr(desktop_diagnostics, "probe_targets", _fake_probe_targets)
 
     def fake_response(path):
         if path.rstrip("/").endswith("/MNAK"):
@@ -702,7 +728,7 @@ async def test_api_test_connection_succeeds_with_no_relay_field_present(
     from bridgebox.server.rooms import UpstreamResponse
     from bridgebox.tls.ca import generate_leaf_cert
 
-    monkeypatch.setattr(desktop, "probe_targets", _fake_probe_targets)
+    monkeypatch.setattr(desktop_diagnostics, "probe_targets", _fake_probe_targets)
 
     class FakeUpstream:
         async def request(self, method, url, *, headers, data):
@@ -1000,7 +1026,7 @@ def test_start_startup_update_check_runs_when_the_setting_is_on(tmp_path: Path, 
     toggle, and main() never once called the method that acts on it - the
     check simply never ran, regardless of the setting's value. Regression
     guard: turning it on must actually produce a result."""
-    monkeypatch.setattr(desktop, "probe_targets", _fake_probe_targets)
+    monkeypatch.setattr(desktop_diagnostics, "probe_targets", _fake_probe_targets)
     config = Config()
     config.update.check_on_startup = True
     api = _make_api(tmp_path, config=config)
@@ -1232,7 +1258,7 @@ def test_check_app_update_coro_reads_the_installed_version_from_version_module(
     """installed must be BridgeBox's own version - not zapret's, not a copy
     kept anywhere else, so it can never drift from what version.app_version()
     (the single source of truth - see version.py) reports."""
-    monkeypatch.setattr(desktop, "app_version", lambda: "9.9.9")
+    monkeypatch.setattr(desktop_app_update, "app_version", lambda: "9.9.9")
 
     async def failing_fetch(session, **kw):
         # Fails fast so this only checks what `installed` was recorded as,
@@ -1266,41 +1292,73 @@ def test_apply_app_update_coro_errors_out_when_not_frozen(tmp_path: Path, monkey
     assert result["version"] is None
 
 
-def test_apply_app_update_coro_downloads_and_swaps_the_exe(tmp_path: Path, monkeypatch):
-    exe_path = tmp_path / "BridgeBox.exe"
-    exe_path.write_bytes(b"old")
-    monkeypatch.setattr(desktop.app_update, "running_exe_path", lambda: exe_path)
+def _fake_portable_release_zip(dest: Path, *, exe_bytes: bytes, internal_bytes: bytes) -> None:
+    import zipfile
 
-    class _Release:
-        version = "0.2.0"
-        asset_url = "https://objects.githubusercontent.com/BridgeBox.exe"
-        asset_is_archive = False
-        asset_digest = None  # nothing to verify - see verify_exe_digest's own tests
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(dest, "w") as bundle:
+        bundle.writestr("BridgeBox_Portable-v0.2.0/README.md", b"# readme")
+        bundle.writestr("BridgeBox_Portable-v0.2.0/bridgebox.exe", exe_bytes)
+        bundle.writestr("BridgeBox_Portable-v0.2.0/_internal/base_library.zip", internal_bytes)
+        bundle.writestr("BridgeBox_Portable-v0.2.0/config.yaml", b"not-touched-by-self-update")
+
+
+class _FakeAppRelease:
+    def __init__(self, *, version="0.2.0", asset_url="ok", asset_is_archive=True, asset_digest=None):
+        self.version = version
+        self.asset_url = asset_url
+        self.asset_is_archive = asset_is_archive
+        self.asset_digest = asset_digest
+
+
+def test_apply_app_update_coro_downloads_and_swaps_both_the_exe_and_internal_dir(
+    tmp_path: Path, monkeypatch
+):
+    """Releases ship the portable .zip - onedir means self-update has to
+    unpack and swap BOTH bridgebox.exe and its _internal/ folder, not the
+    exe alone (see _apply_app_update_coro's own docstring on why a
+    mismatched pairing cannot run)."""
+    exe_path = tmp_path / "app" / "BridgeBox.exe"
+    internal_path = tmp_path / "app" / "_internal"
+    exe_path.parent.mkdir()
+    exe_path.write_bytes(b"old-exe")
+    internal_path.mkdir()
+    (internal_path / "base_library.zip").write_bytes(b"old-internal")
+    monkeypatch.setattr(desktop.app_update, "running_exe_path", lambda: exe_path)
+    monkeypatch.setattr(desktop.app_update, "running_internal_dir", lambda: internal_path)
 
     async def fake_fetch(session, **kw):
-        return _Release()
+        return _FakeAppRelease(
+            asset_url="https://objects.githubusercontent.com/BridgeBox_Portable-v0.2.0.zip"
+        )
 
     downloaded = {}
 
     async def fake_download_exe(session, url, dest, **kw):
         downloaded["url"] = url
-        downloaded["dest"] = dest
-        dest.write_bytes(b"new")
+        downloaded["dest"] = Path(dest)
+        _fake_portable_release_zip(Path(dest), exe_bytes=b"new-exe", internal_bytes=b"new-internal")
         return dest
 
     swapped = {}
 
-    def fake_replace(new_path, current_path):
-        swapped["new_path"] = new_path
-        swapped["current_path"] = current_path
-        current_path.write_bytes(new_path.read_bytes())
+    def fake_replace_exe(new_path, current_path):
+        swapped["exe"] = (Path(new_path), current_path)
+        current_path.write_bytes(Path(new_path).read_bytes())
         return current_path.with_name(current_path.name + ".old")
+
+    def fake_replace_internal(new_dir, current_dir):
+        swapped["internal"] = (Path(new_dir), current_dir)
+        shutil.rmtree(current_dir)
+        Path(new_dir).rename(current_dir)
+        return current_dir.with_name(current_dir.name + ".old")
 
     manifest_calls = []
     monkeypatch.setattr(desktop.app_update, "fetch_latest_release", fake_fetch)
     monkeypatch.setattr(desktop.app_update, "download_exe", fake_download_exe)
-    monkeypatch.setattr(desktop.app_update, "replace_running_exe", fake_replace)
-    monkeypatch.setattr(desktop.integrity, "write_manifest", lambda root: manifest_calls.append(root))
+    monkeypatch.setattr(desktop.app_update, "replace_running_exe", fake_replace_exe)
+    monkeypatch.setattr(desktop.app_update, "replace_running_internal", fake_replace_internal)
+    monkeypatch.setattr(desktop_app_update.integrity, "write_manifest", lambda root: manifest_calls.append(root))
     api = _make_api(tmp_path)
 
     import asyncio as _asyncio
@@ -1308,10 +1366,16 @@ def test_apply_app_update_coro_downloads_and_swaps_the_exe(tmp_path: Path, monke
     result = _asyncio.run(api._apply_app_update_coro())
 
     assert result == {"ok": True, "error": None, "version": "0.2.0"}
-    assert downloaded["url"] == "https://objects.githubusercontent.com/BridgeBox.exe"
-    assert swapped["current_path"] == exe_path
-    assert exe_path.read_bytes() == b"new"
-    # The exe on disk just changed out from under integrity.py's own
+    assert exe_path.read_bytes() == b"new-exe"
+    assert (internal_path / "base_library.zip").read_bytes() == b"new-internal"
+    # Both landed beside the running install, not in temp - replace_*
+    # renames paths past each other, which only works within one volume.
+    assert swapped["exe"][0].parent == exe_path.parent
+    assert swapped["internal"][0].parent == internal_path.parent
+    # The zip itself was scratch - it must not be left behind.
+    assert downloaded["dest"].parent == api._temp_root()
+    assert not downloaded["dest"].exists()
+    # The install on disk just changed out from under integrity.py's own
     # baseline - without a fresh manifest the very next launch would show
     # "files were modified" over a change this process just made itself.
     assert manifest_calls == [tmp_path]
@@ -1322,31 +1386,30 @@ def test_apply_app_update_coro_refuses_a_digest_mismatch_and_does_not_swap(
     tmp_path: Path, monkeypatch
 ):
     exe_path = tmp_path / "BridgeBox.exe"
-    exe_path.write_bytes(b"old")
+    internal_path = tmp_path / "_internal"
+    exe_path.write_bytes(b"old-exe")
+    internal_path.mkdir()
+    (internal_path / "base_library.zip").write_bytes(b"old-internal")
     monkeypatch.setattr(desktop.app_update, "running_exe_path", lambda: exe_path)
-
-    class _Release:
-        version = "0.2.0"
-        asset_url = "https://objects.githubusercontent.com/BridgeBox.exe"
-        asset_is_archive = False
-        asset_digest = "sha256:" + "a" * 64  # will never match b"new"
+    monkeypatch.setattr(desktop.app_update, "running_internal_dir", lambda: internal_path)
 
     async def fake_fetch(session, **kw):
-        return _Release()
+        return _FakeAppRelease(asset_digest="sha256:" + "a" * 64)  # will never match
 
     async def fake_download_exe(session, url, dest, **kw):
-        dest.write_bytes(b"new")
+        _fake_portable_release_zip(Path(dest), exe_bytes=b"new-exe", internal_bytes=b"new-internal")
         return dest
 
     replace_calls = []
 
-    def fake_replace(new_path, current_path):
-        replace_calls.append((new_path, current_path))
-        raise AssertionError("must not swap in an exe that failed its checksum")
+    def fake_replace(*args):
+        replace_calls.append(args)
+        raise AssertionError("must not swap in an install that failed its checksum")
 
     monkeypatch.setattr(desktop.app_update, "fetch_latest_release", fake_fetch)
     monkeypatch.setattr(desktop.app_update, "download_exe", fake_download_exe)
     monkeypatch.setattr(desktop.app_update, "replace_running_exe", fake_replace)
+    monkeypatch.setattr(desktop.app_update, "replace_running_internal", fake_replace)
     api = _make_api(tmp_path)
 
     import asyncio as _asyncio
@@ -1355,25 +1418,26 @@ def test_apply_app_update_coro_refuses_a_digest_mismatch_and_does_not_swap(
 
     assert result["ok"] is False
     assert replace_calls == []
-    assert exe_path.read_bytes() == b"old"
-    stage_path = tmp_path / "BridgeBox.exe.new"
-    assert not stage_path.exists(), "a checksum-rejected download must not linger on disk"
+    assert exe_path.read_bytes() == b"old-exe"
+    assert (internal_path / "base_library.zip").read_bytes() == b"old-internal"
+    exe_stage = tmp_path / "BridgeBox.exe.new"
+    internal_stage = tmp_path / "_internal.new"
+    assert not exe_stage.exists(), "a checksum-rejected download must not linger on disk"
+    assert not internal_stage.exists(), "a checksum-rejected download must not linger on disk"
 
 
 def test_apply_app_update_coro_errors_when_the_release_has_nothing_downloadable(
     tmp_path: Path, monkeypatch
 ):
     exe_path = tmp_path / "BridgeBox.exe"
+    internal_path = tmp_path / "_internal"
     exe_path.write_bytes(b"old")
+    internal_path.mkdir()
     monkeypatch.setattr(desktop.app_update, "running_exe_path", lambda: exe_path)
-
-    class _Release:
-        version = "0.2.0"
-        asset_url = None
-        asset_is_archive = False
+    monkeypatch.setattr(desktop.app_update, "running_internal_dir", lambda: internal_path)
 
     async def fake_fetch(session, **kw):
-        return _Release()
+        return _FakeAppRelease(asset_url=None, asset_is_archive=False)
 
     monkeypatch.setattr(desktop.app_update, "fetch_latest_release", fake_fetch)
     api = _make_api(tmp_path)
@@ -1387,35 +1451,39 @@ def test_apply_app_update_coro_errors_when_the_release_has_nothing_downloadable(
 
 
 def test_apply_app_update_coro_never_touches_config(tmp_path: Path, monkeypatch):
-    """The whole point: a self-update replaces one exe file next to itself
-    and nothing else - config.yaml is a completely separate file this
-    function never opens."""
+    """The whole point: a self-update replaces bridgebox.exe and _internal/
+    next to itself and nothing else - config.yaml is a completely separate
+    file this function never opens."""
     config_path = tmp_path / "config.yaml"
     config_path.write_text("server:\n  port: 12345\n", encoding="utf-8")
     exe_path = tmp_path / "BridgeBox.exe"
-    exe_path.write_bytes(b"old")
+    internal_path = tmp_path / "_internal"
+    exe_path.write_bytes(b"old-exe")
+    internal_path.mkdir()
+    (internal_path / "base_library.zip").write_bytes(b"old-internal")
     monkeypatch.setattr(desktop.app_update, "running_exe_path", lambda: exe_path)
-
-    class _Release:
-        version = "0.2.0"
-        asset_url = "https://objects.githubusercontent.com/BridgeBox.exe"
-        asset_is_archive = False
-        asset_digest = None
+    monkeypatch.setattr(desktop.app_update, "running_internal_dir", lambda: internal_path)
 
     async def fake_fetch(session, **kw):
-        return _Release()
+        return _FakeAppRelease()
 
     async def fake_download_exe(session, url, dest, **kw):
-        dest.write_bytes(b"new")
+        _fake_portable_release_zip(Path(dest), exe_bytes=b"new-exe", internal_bytes=b"new-internal")
         return dest
 
-    def fake_replace(new_path, current_path):
-        current_path.write_bytes(new_path.read_bytes())
+    def fake_replace_exe(new_path, current_path):
+        current_path.write_bytes(Path(new_path).read_bytes())
         return current_path.with_name(current_path.name + ".old")
+
+    def fake_replace_internal(new_dir, current_dir):
+        shutil.rmtree(current_dir)
+        Path(new_dir).rename(current_dir)
+        return current_dir.with_name(current_dir.name + ".old")
 
     monkeypatch.setattr(desktop.app_update, "fetch_latest_release", fake_fetch)
     monkeypatch.setattr(desktop.app_update, "download_exe", fake_download_exe)
-    monkeypatch.setattr(desktop.app_update, "replace_running_exe", fake_replace)
+    monkeypatch.setattr(desktop.app_update, "replace_running_exe", fake_replace_exe)
+    monkeypatch.setattr(desktop.app_update, "replace_running_internal", fake_replace_internal)
     api = _make_api(tmp_path)
 
     import asyncio as _asyncio
@@ -1697,7 +1765,7 @@ def test_a_room_token_never_reaches_a_diagnostic_step():
         "body": {"token": "s3cr3t-room-token", "accessToken": "another", "apptag": "fourbage"},
     }
 
-    rendered = desktop._redacted_json(body)
+    rendered = desktop_diagnostics._redacted_json(body)
 
     assert "s3cr3t-room-token" not in rendered
     assert "another" not in rendered
@@ -1728,7 +1796,7 @@ def test_changing_the_theme_repaints_the_title_bar(tmp_path: Path, monkeypatch):
         applied.append(theme)
         return THEMED_FULL
 
-    monkeypatch.setattr(desktop, "apply_titlebar_theme", fake_apply)
+    monkeypatch.setattr(desktop_system, "apply_titlebar_theme", fake_apply)
 
     api = _make_api(tmp_path)
     api.attach_window(object())
@@ -1744,7 +1812,7 @@ def test_a_factory_reset_puts_the_title_bar_back_too(tmp_path: Path, monkeypatch
     of a theme that is no longer set."""
     applied: list[str] = []
     monkeypatch.setattr(
-        desktop, "apply_titlebar_theme", lambda window, theme: applied.append(theme) or THEMED_FULL
+        desktop_system, "apply_titlebar_theme", lambda window, theme: applied.append(theme) or THEMED_FULL
     )
 
     config = Config()
@@ -1764,7 +1832,7 @@ def test_a_failing_title_bar_repaint_never_fails_the_config_write(tmp_path: Path
     def exploding(window, theme):
         raise OSError("dwmapi refused")
 
-    monkeypatch.setattr(desktop, "apply_titlebar_theme", exploding)
+    monkeypatch.setattr(desktop_system, "apply_titlebar_theme", exploding)
 
     api = _make_api(tmp_path)
     api.attach_window(object())
@@ -1912,11 +1980,11 @@ async def test_update_sweeps_a_winws_this_session_never_started(tmp_path: Path, 
         def stop(self):  # pragma: no cover - must never be reached here
             order.append("stop")
 
-    monkeypatch.setattr(desktop, "kill_all_winws", lambda: order.append("kill_all_winws"))
+    monkeypatch.setattr(desktop_zapret, "kill_all_winws", lambda: order.append("kill_all_winws"))
     # Waiting for the process to actually die is the step that stops the file
     # replacement from starting too early - pinned here, faked for speed.
     monkeypatch.setattr(
-        desktop, "wait_for_winws_exit", lambda: order.append("wait_for_winws_exit") or True
+        desktop_zapret, "wait_for_winws_exit", lambda: order.append("wait_for_winws_exit") or True
     )
     monkeypatch.setattr(
         zapret_update,
@@ -1956,8 +2024,8 @@ def test_set_autostart_records_the_minimized_choice_the_task_cannot_report(
 ):
     """schtasks can say whether a task exists, but not whether it carries
     --minimized. That half of the answer only lives in config.yaml."""
-    monkeypatch.setattr(desktop, "enable_autostart", lambda *, minimized: True)
-    monkeypatch.setattr(desktop, "autostart_is_enabled", lambda: True)
+    monkeypatch.setattr(desktop_system, "enable_autostart", lambda *, minimized: True)
+    monkeypatch.setattr(desktop_system, "autostart_is_enabled", lambda: True)
     api = _make_api(tmp_path)
 
     result = api.set_autostart(True, True)
@@ -1970,8 +2038,8 @@ def test_set_autostart_records_the_minimized_choice_the_task_cannot_report(
 def test_a_refused_autostart_is_not_recorded_as_enabled(tmp_path: Path, monkeypatch):
     """A toggle that shows "on" while Windows has no task is worse than an
     error: the user finds out at the next boot, or never."""
-    monkeypatch.setattr(desktop, "enable_autostart", lambda *, minimized: False)
-    monkeypatch.setattr(desktop, "autostart_is_enabled", lambda: False)
+    monkeypatch.setattr(desktop_system, "enable_autostart", lambda *, minimized: False)
+    monkeypatch.setattr(desktop_system, "autostart_is_enabled", lambda: False)
     api = _make_api(tmp_path)
 
     result = api.set_autostart(True, False)
@@ -1985,7 +2053,7 @@ def test_get_autostart_trusts_windows_over_the_config_file(tmp_path: Path, monke
     """Somebody can delete the task in Task Scheduler. The truth is the task."""
     config = Config()
     config.ui.autostart = True
-    monkeypatch.setattr(desktop, "autostart_is_enabled", lambda: False)
+    monkeypatch.setattr(desktop_system, "autostart_is_enabled", lambda: False)
     api = _make_api(tmp_path, config=config)
 
     assert api.get_autostart()["enabled"] is False
@@ -2706,7 +2774,7 @@ def test_apply_steam_launch_options_uses_a_timeout_well_above_quit_steams_worst_
 
     api.apply_steam_launch_options(["852600"])
 
-    assert captured["timeout"] == desktop.STEAM_LAUNCH_API_TIMEOUT_S
+    assert captured["timeout"] == STEAM_LAUNCH_API_TIMEOUT_S
     # Must clear quit_steam's own worst case (three chained 10s subprocess
     # timeouts plus the poll-loop budget) with real margin, not just nudge
     # past the old bare 30.
@@ -2973,62 +3041,3 @@ def test_restart_app_passes_a_real_environment_outside_a_frozen_build(tmp_path: 
 
     assert captured["env"]["BRIDGEBOX_UNRELATED"] == "keep-me"
     assert len(captured["env"]) > 1
-
-
-def test_apply_app_update_coro_unpacks_the_exe_from_a_portable_zip(tmp_path: Path, monkeypatch):
-    """Releases ship the portable .zip. The archive is a throwaway and goes
-    to the temp folder, but the exe it holds must land next to the binary it
-    replaces: replace_running_exe renames files past each other, which only
-    works within one volume, and temp is routinely on another drive."""
-    import zipfile
-
-    exe_path = tmp_path / "app" / "BridgeBox.exe"
-    exe_path.parent.mkdir()
-    exe_path.write_bytes(b"old")
-    monkeypatch.setattr(desktop.app_update, "running_exe_path", lambda: exe_path)
-
-    class _Release:
-        version = "0.2.0"
-        asset_url = "https://objects.githubusercontent.com/BridgeBox_Portable-v0.2.0.zip"
-        asset_digest = None
-        asset_is_archive = True
-
-    async def fake_fetch(session, **kw):
-        return _Release()
-
-    downloaded = {}
-
-    async def fake_download_exe(session, url, dest, **kw):
-        downloaded["url"] = url
-        downloaded["dest"] = Path(dest)
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        with zipfile.ZipFile(dest, "w") as bundle:
-            bundle.writestr("BridgeBox_Portable-v0.2.0/README.md", b"# readme")
-            bundle.writestr("BridgeBox_Portable-v0.2.0/bridgebox.exe", b"new")
-        return dest
-
-    swapped = {}
-
-    def fake_replace(new_path, current_path):
-        swapped["new_path"] = Path(new_path)
-        current_path.write_bytes(Path(new_path).read_bytes())
-        return current_path.with_name(current_path.name + ".old")
-
-    monkeypatch.setattr(desktop.app_update, "fetch_latest_release", fake_fetch)
-    monkeypatch.setattr(desktop.app_update, "download_exe", fake_download_exe)
-    monkeypatch.setattr(desktop.app_update, "replace_running_exe", fake_replace)
-    monkeypatch.setattr(desktop.integrity, "write_manifest", lambda root: None)
-    api = _make_api(tmp_path)
-
-    import asyncio as _asyncio
-
-    result = _asyncio.run(api._apply_app_update_coro())
-
-    assert result == {"ok": True, "error": None, "version": "0.2.0"}
-    assert exe_path.read_bytes() == b"new"
-    # The zip went to temp, the exe came out beside the running binary.
-    assert downloaded["dest"].suffix == ".zip"
-    assert downloaded["dest"].parent == api._temp_root()
-    assert swapped["new_path"].parent == exe_path.parent
-    # The archive is scratch - it must not be left behind.
-    assert not downloaded["dest"].exists()

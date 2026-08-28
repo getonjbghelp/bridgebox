@@ -133,4 +133,13 @@ export const CREDITS: CreditEntry[] = [
     purpose:
       'Только референс, код не заимствован - community-сервер Ecast API v2, независимо подтвердивший формат host/code/token и произвольный путь WS-подключения',
   },
+  {
+    name: 'tg-ws-proxy',
+    author: 'Flowseal',
+    authorUrl: 'https://github.com/Flowseal',
+    projectUrl: 'https://github.com/Flowseal/tg-ws-proxy',
+    license: 'MIT',
+    purpose:
+      'Только референс, код не заимствован - паттерн прогрева пула WS-соединений (proxy/pool.py) вдохновил прогрев подключения к Ecast в runtime_core.py, чтобы создание комнаты не платило за холодный TCP+TLS хендшейк поверх задержки zapret',
+  },
 ]

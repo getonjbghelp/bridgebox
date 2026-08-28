@@ -25,9 +25,9 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 PUBLIC_DIR = REPO_ROOT / "githubpubliccode"
 
 EXCLUDE_DIRS = [
-    ".venv", "node_modules", "__pycache__", ".pytest_cache", "dist", "build",
-    "logs", "certs", "temp", "graphify-out", ".claude", ".impeccable", ".git",
-    "githubpubliccode", "docs", "*.egg-info", "handoffs", "problems-BB", "tgbot",
+    ".venv", "node_modules", ".pnpm-store", "__pycache__", ".pytest_cache", "dist", "build",
+    "logs", "certs", "temp", "graphify-out", ".claude", ".agents", ".codex", ".impeccable", ".git",
+    "githubpubliccode", "docs", "docs (NOT ACTUAL ANYMORE)", "*.egg-info", "handoffs", "problems-BB", "tgbot",
     "scuba",
 ]
 EXCLUDE_FILES = [

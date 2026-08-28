@@ -6,7 +6,12 @@ interface ToggleProps {
   checked: boolean
   onChange: (checked: boolean) => void
   size?: 'sm' | 'lg'
-  label?: string
+  // Required, not optional: this is a role="switch" with no visible text of
+  // its own, so a missing label is a silent screen-reader dead end, not a
+  // cosmetic gap - "switch, not checked" with nothing saying which setting.
+  // Making it required means a new Toggle without one fails the build
+  // instead of shipping unlabeled.
+  label: string
   disabled?: boolean
 }
 

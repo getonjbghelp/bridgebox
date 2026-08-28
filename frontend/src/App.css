@@ -33,6 +33,14 @@
   max-width: 720px;
 }
 
+/* Logs only: everywhere else a narrow column helps scanability (forms,
+   toggles, short labels), but a log line is data, not prose - long request
+   URLs, headers, and JSON bodies wrap far more than they need to inside
+   720px, hiding content a wider window has room for. */
+.bb-app__screen--wide {
+  max-width: none;
+}
+
 .bb-app__screen[data-active='true'] {
   display: block;
   /* Replays every time the screen is shown again: a display:none element

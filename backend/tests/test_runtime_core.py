@@ -538,6 +538,99 @@ async def test_two_concurrent_stops_tear_down_each_listener_once(tmp_path: Path)
     assert main_runner.cleanup_calls == 1, "the bridge server was torn down twice"
 
 
+# ---- upstream pre-warm ----
+
+
+class FakeUpstreamClient:
+    def __init__(self):
+        self.calls = []
+
+    async def request(self, method, url, *, headers, data):
+        self.calls.append((method, url))
+        return object()
+
+
+async def test_start_pre_warms_both_active_upstreams(tmp_path: Path):
+    config = Config()
+    config.zapret.enabled = False
+    calls, deps = _make_deps(tmp_path)
+    client = FakeUpstreamClient()
+    deps["upstream_client_factory"] = lambda session: client
+    core = RuntimeCore(config=config, project_root=tmp_path, **deps)
+
+    await core.start()
+    await core._prewarm_task
+
+    assert set(client.calls) == {
+        ("GET", "https://ecast.jackboxgames.com"),
+        ("GET", "https://blobcast.jackboxgames.com"),
+    }
+
+
+async def test_prewarm_waits_for_winws_to_settle_when_zapret_is_enabled(tmp_path: Path):
+    strategies_dir = tmp_path / "zapret" / "strategies"
+    strategies_dir.mkdir(parents=True)
+    (strategies_dir / "General.bat").write_text("@echo off\n")
+
+    config = Config()
+    config.zapret.enabled = True
+    config.zapret.dir = "zapret"
+    config.zapret.strategy = "general"
+
+    calls, deps = _make_deps(tmp_path)
+    client = FakeUpstreamClient()
+    deps["upstream_client_factory"] = lambda session: client
+    zapret_process = ZapretProcess(popen=FakeLauncher(), runner=FakeSubprocessRunner(), allowed_root=tmp_path)
+    core = RuntimeCore(config=config, project_root=tmp_path, zapret_process=zapret_process, **deps)
+
+    await core.start()
+    assert client.calls == [], "must not fire before WinDivert has settled into the packet path"
+
+    await core._prewarm_task
+
+    assert set(client.calls) == {
+        ("GET", "https://ecast.jackboxgames.com"),
+        ("GET", "https://blobcast.jackboxgames.com"),
+    }
+
+
+async def test_stop_cancels_a_still_pending_prewarm(tmp_path: Path):
+    strategies_dir = tmp_path / "zapret" / "strategies"
+    strategies_dir.mkdir(parents=True)
+    (strategies_dir / "General.bat").write_text("@echo off\n")
+
+    config = Config()
+    config.zapret.enabled = True
+    config.zapret.dir = "zapret"
+    config.zapret.strategy = "general"
+
+    calls, deps = _make_deps(tmp_path)
+    zapret_process = ZapretProcess(popen=FakeLauncher(), runner=FakeSubprocessRunner(), allowed_root=tmp_path)
+    core = RuntimeCore(config=config, project_root=tmp_path, zapret_process=zapret_process, **deps)
+
+    await core.start()
+    prewarm_task = core._prewarm_task
+
+    await core.stop()
+
+    assert prewarm_task.cancelled()
+
+
+async def test_prewarm_failure_is_swallowed(tmp_path: Path):
+    class BrokenUpstreamClient:
+        async def request(self, method, url, *, headers, data):
+            raise ConnectionError("boom")
+
+    config = Config()
+    config.zapret.enabled = False
+    calls, deps = _make_deps(tmp_path)
+    deps["upstream_client_factory"] = lambda session: BrokenUpstreamClient()
+    core = RuntimeCore(config=config, project_root=tmp_path, **deps)
+
+    await core.start()
+    await core._prewarm_task  # must not raise
+
+
 async def test_a_stop_racing_a_start_does_not_interleave(tmp_path: Path):
     """Same gate, the other direction: the toggle and the automatic
     start-on-launch can both land at once."""

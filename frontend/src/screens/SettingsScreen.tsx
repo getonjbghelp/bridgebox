@@ -7,248 +7,40 @@ import { Modal } from '../components/Modal'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { DiagBadge, type DiagState } from '../components/DiagBadge'
 import { Spinner } from '../components/Spinner'
-import { IconClose, IconPlus, IconTrash } from '../components/icons'
 import { Segmented } from '../components/Segmented'
-import { useMotionPrefs, type UiSection } from '../state/MotionPrefsContext'
-import { useSpringTransition } from '../lib/motion'
+import { useMotionPrefs } from '../state/MotionPrefsContext'
+import { useSpringTransition, useStepTransition } from '../lib/motion'
 import { useStrings, t, strategyGroupLabel } from '../lib/strings'
-import { callBridge, isNativeBridgeAvailable, waitForBridgeReady } from '../lib/bridge'
+import { callBridge, isNativeBridgeAvailable, logBridgeError, waitForBridgeReady } from '../lib/bridge'
 import { isConfirmSkipped, setConfirmSkipped } from '../lib/confirmSkip'
 import { clearPoll } from '../lib/poll'
+import { useStrategyTestPanel } from './settings/StrategyTestPanel'
+import { useProfilesTab } from './settings/ProfilesTab'
+import type {
+  StrategyGroups,
+  TempDirResponse,
+  UpdateCheckResponse,
+  StrategyChanges,
+  UpdateProgressResponse,
+  ProfilesConfig,
+  AutostartResponse,
+  AppConfig,
+  AppUpdateCheckResponse,
+  AppApplyProgress,
+  ConfigResponse,
+  FullConfigResponse,
+  StrategiesResponse,
+  StartupUpdateCheck,
+  HostlistResponse,
+  SaveHostlistResponse,
+  ConfirmRequest,
+  SettingsTab,
+} from './settings/types'
 import './SettingsScreen.css'
 
-interface StrategyOption {
-  key: string
-  name: string
-}
-type StrategyGroups = Record<string, StrategyOption[]>
-
-interface RewriteConfig {
-  server_enabled: boolean
-  server_keys: string[]
-  room_id_keys: string[]
-  upstream_base: string
-  origin_enabled: boolean
-  upstream_origin: string
-  user_agent_enabled: boolean
-  fallback_user_agent: string
-}
-
-interface TempDirResponse {
-  ok: boolean
-  error: string | null
-  path: string
-  resolved: string
-}
-
-interface UpdateCheckResponse {
-  ok: boolean
-  error: string | null
-  installed: string | null
-  latest: string | null
-  updateAvailable: boolean
-}
-
-/** What an update did to zapret/strategies/, reported per outcome.
- *
- *  `forked` is the one that needs explaining to the user rather than just
- *  listing: it means their own edited strategy was left exactly as it was and
- *  the release's version was written beside it under a new name. */
-interface StrategyChanges {
-  added: string[]
-  updated: string[]
-  forked: [string, string][]
-  skipped: [string, string][]
-}
-
-interface UpdateProgressResponse {
-  ok: boolean
-  error: string | null
-  done: boolean
-  phase: 'download' | 'extract' | 'apply' | 'done' | 'idle'
-  received: number
-  total: number
-  applied: string[]
-  version: string | null
-  strategies: StrategyChanges | null
-}
-
-/** A destination preset. `kind` is NOT a mode to switch between: Ecast and
- *  Blobcast paths are disjoint, so both are always served. It only says which
- *  half of the traffic this address receives. */
-type ProfileKind = 'ecast' | 'blobcast'
-
-/** Response rewriting. Only ever applied to Ecast, which is why it lives on
- *  the profile instead of being a global section that silently applied to
- *  Blobcast traffic too. */
-interface EcastSettings {
-  server_enabled: boolean
-  server_keys: string[]
-  room_id_keys: string[]
-  origin_enabled: boolean
-  upstream_origin: string
-  user_agent_enabled: boolean
-  fallback_user_agent: string
-  forward_all: boolean
-  paths: string[]
-}
-
-interface BlobcastSettings {
-  socketio_port: number
-  intercept_session: boolean
-  local_server_name: string
-  log_frames: boolean
-  paths: string[]
-}
-
-interface Profile {
-  id: string
-  name: string
-  kind: ProfileKind
-  upstream: string
-  builtin: boolean
-  ecast: EcastSettings
-  blobcast: BlobcastSettings
-}
-
-/** The editable text fields of an Ecast profile, deliberately excluding the
- *  booleans so a toggle can't be handed to the text-field helper. */
-type EcastField = 'server_keys' | 'room_id_keys' | 'upstream_origin' | 'fallback_user_agent'
-type EcastFlag = 'server_enabled' | 'origin_enabled' | 'user_agent_enabled'
-
-interface ProfilesConfig {
-  items: Profile[]
-  active_ecast: string
-  active_blobcast: string
-}
-
-interface AutostartResponse {
-  ok: boolean
-  error: string | null
-  enabled: boolean
-  minimized: boolean
-}
-
-interface AppConfig {
-  server: { port: number }
-  zapret: { strategy: string; hide_console: boolean }
-  update: { check_on_startup: boolean }
-  app_update: { check_on_startup: boolean }
-  ui?: { start_bridge_on_launch: boolean; minimize_to_tray: boolean }
-  profiles: ProfilesConfig
-  rewrite: RewriteConfig
-}
-
-interface AppUpdateCheckResponse {
-  ok: boolean
-  error: string | null
-  installed: string | null
-  latest: string | null
-  notes: string | null
-  htmlUrl: string | null
-  critical: boolean
-  updateAvailable: boolean
-}
-
-interface AppApplyProgress {
-  started: boolean
-  done: boolean
-  ok: boolean | null
-  error: string | null
-  version: string | null
-}
-
-interface ConfigResponse {
-  ok: boolean
-  error: string | null
-  config: AppConfig | null
-}
-
-// Only the factory-reset response needs `ui` - every other call site here
-// edits a single non-ui field and has no reason to touch theme/animations/
-// sidebar state.
-interface FullConfigResponse {
-  ok: boolean
-  error: string | null
-  config: (AppConfig & { ui: UiSection }) | null
-}
-
-interface StrategiesResponse {
-  ok: boolean
-  groups: StrategyGroups
-}
-
-interface TargetResult {
-  ok: boolean
-  elapsedMs: number | null
-  status: number | null
-  error: string | null
-}
-
-/** Which protocol's hosts a result was measured against - "both" runs two
- *  full passes (see backend Api.test_strategies), so a flat results list can
- *  hold rows from either stage and this is what tells them apart. */
-type TargetSet = 'ecast' | 'blobcast'
-
-interface StrategyResult {
-  key: string
-  name: string
-  ok: boolean
-  error: string | null
-  targets: Record<string, TargetResult>
-  targetSet: TargetSet
-}
-
-interface TestStrategiesStart {
-  ok: boolean
-  error: string | null
-  total: number
-}
-
-interface TestStrategiesProgress {
-  ok: boolean
-  error: string | null
-  results: StrategyResult[]
-  fastestKey: string | null
-  // Which stage is running right now; null before a run starts and once it
-  // finishes. Lets the popup say "Этап: Blobcast" during a "both" run.
-  stage: TargetSet | null
-  done: boolean
-}
-
-interface StartupUpdateCheck {
-  ok: boolean
-  error: string | null
-  started: boolean
-  done: boolean
-  installed: string | null
-  latest: string | null
-  updateAvailable: boolean
-}
-
-interface HostlistResponse {
-  ok: boolean
-  error: string | null
-  text: string
-}
-
-interface SaveHostlistResponse {
-  ok: boolean
-  error: string | null
-  count: number
-}
-
-interface ConfirmRequest {
-  // localStorage key for "don't ask again" - each reset button owns its own,
-  // so skipping one confirmation never silences another.
-  id: string
-  title: string
-  body: string
-  confirmLabel: string
-  danger?: boolean
-  action: () => void
-}
-
+// Shared with StrategyTestPanel's own copy - two different pollers (this one
+// is the zapret-update download progress) that happen to want the same
+// cadence, not one poller split across two files.
 const STRATEGY_POLL_MS = 700
 
 /**
@@ -272,18 +64,41 @@ const RESTART_SCOPE: Record<string, 'bridge' | 'app'> = {
   rewrite: 'bridge',
   logging: 'app',
 }
+// Left-to-right order the tab bar itself shows them in - the only source of
+// truth for which way a switch should slide, so the animation never drifts
+// out of sync with a future reordering of the Segmented's own options.
+//
+// Ordered by relevance, not alphabetically or by when each tab was added:
+// Сеть (the strategy picker - what someone actually opens Settings to fix
+// when a game won't connect) and Профили (which upstream/protocol traffic
+// even routes to) are the two tabs a working install still gets touched
+// for; Общие (appearance/autostart) is everyday but rarely urgent;
+// Обновления is occasional maintenance; Система (port, console, factory
+// reset) is the advanced/rare/destructive end, so it sits last.
+const TAB_ORDER: SettingsTab[] = ['network', 'profiles', 'general', 'updates', 'system']
 
-const splitKeys = (text: string) =>
-  text
-    .split(',')
-    .map((part) => part.trim())
-    .filter(Boolean)
+// Which visible section a RESTART_SCOPE key's own controls live in, so the
+// dirty banner can name what changed instead of a bare "settings changed".
+// A component-body const, not module-level like RESTART_SCOPE itself,
+// because the labels are translated strings.
+function restartScopeLabels(strings: ReturnType<typeof useStrings>): Record<string, string> {
+  return {
+    server: strings.settings.systemSectionTitle,
+    zapret: strings.settings.networkSectionTitle,
+    profiles: strings.settings.profilesSectionTitle,
+    proxy: strings.settings.networkSectionTitle,
+    rewrite: strings.settings.profilesSectionTitle,
+    logging: strings.settings.systemSectionTitle,
+  }
+}
 
 export function SettingsScreen() {
   const strings = useStrings()
   const {
     animationsEnabled,
     setAnimationsEnabled,
+    animationDurationMs,
+    setAnimationDurationMs,
     theme,
     setTheme,
     language,
@@ -292,8 +107,27 @@ export function SettingsScreen() {
     setSetupComplete,
   } = useMotionPrefs()
 
+  // Free-text buffer for the ms field below - a Toggle/Segmented commits on
+  // every click, but a number needs to be typeable ("2" then "20") without
+  // firing setAnimationDurationMs on every keystroke. Resynced whenever the
+  // context value changes from elsewhere (config load, factory reset).
+  const [animationDurationInput, setAnimationDurationInput] = useState(String(animationDurationMs))
+  useEffect(() => {
+    setAnimationDurationInput(String(animationDurationMs))
+  }, [animationDurationMs])
+
+  function commitAnimationDuration() {
+    const parsed = Number(animationDurationInput)
+    const clamped = Number.isFinite(parsed) ? Math.min(1000, Math.max(50, parsed)) : animationDurationMs
+    setAnimationDurationInput(String(clamped))
+    if (clamped !== animationDurationMs) setAnimationDurationMs(clamped)
+  }
+
   const [strategy, setStrategy] = useState('general')
   const [strategyGroups, setStrategyGroups] = useState<StrategyGroups>({})
+  const selectedStrategyIsAggressive = Object.values(strategyGroups)
+    .flat()
+    .some((opt) => opt.key === strategy && opt.aggressive)
   const [port, setPort] = useState('8443')
   // The last value actually confirmed by the backend (set on load and on
   // every successful persist) - not just what the input currently shows, so
@@ -309,37 +143,7 @@ export function SettingsScreen() {
   const [minimizeToTray, setMinimizeToTray] = useState(true)
 
   const [profiles, setProfiles] = useState<ProfilesConfig | null>(null)
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [transferOpen, setTransferOpen] = useState(false)
-  const [transferText, setTransferText] = useState('')
-  const [transferReport, setTransferReport] = useState<{
-    added: number
-    skipped: { name: string; reason: string }[]
-  } | null>(null)
   const [configError, setConfigError] = useState<string | null>(null)
-
-  const [strategyTest, setStrategyTest] = useState<DiagState>('idle')
-  const [strategyPopupOpen, setStrategyPopupOpen] = useState(false)
-  const [strategyResults, setStrategyResults] = useState<StrategyResult[]>([])
-  const [fastestKey, setFastestKey] = useState<string | null>(null)
-  const [strategyTotal, setStrategyTotal] = useState(0)
-  const [diagError, setDiagError] = useState<string | null>(null)
-  // "Прочие" (Fake TLS Auto*, Simple Fake*) is skipped by default - it's the
-  // slow half of the set (see diagnostics.py's HEAVY_GROUPS) - but skipping
-  // it silently made the suite look like it only ever covers General and the
-  // Alternatives. Opt-in, not a second default, since most runs don't need it.
-  const [testHeavy, setTestHeavy] = useState(false)
-  // Which protocol's hosts to probe. Ecast by default - it's the one every
-  // Party Pack 7+ game needs, and it's what this test checked before
-  // Blobcast pings existed at all, so a fresh install's first run stays the
-  // same shape it always was.
-  const [targetSet, setTargetSet] = useState<TargetSet | 'both'>('ecast')
-  // Which stage is running right now, mirrored from progress.stage - drives
-  // the "Этап: Ecast/Blobcast" label so a "both" run doesn't look stuck
-  // during the (much longer) second half.
-  const [runningStage, setRunningStage] = useState<TargetSet | null>(null)
-  const [exportError, setExportError] = useState<string | null>(null)
-  const pollRef = useRef<number | undefined>(undefined)
 
   const [tempDir, setTempDir] = useState<TempDirResponse | null>(null)
   const [checkOnStartup, setCheckOnStartup] = useState(false)
@@ -369,11 +173,30 @@ export function SettingsScreen() {
   // Which restart the settings changed so far are waiting on, if any. See
   // RESTART_SCOPE for why this is not simply "something changed".
   const [pendingRestart, setPendingRestart] = useState<'bridge' | 'app' | null>(null)
+  // Which RESTART_SCOPE section(s) contributed, so the banner can name them
+  // instead of a bare "settings changed" - a user who tweaked strategy AND
+  // port before noticing the banner had no way to tell which one it meant.
+  // Accumulates across edits (the banner itself persists across them, by
+  // design) and clears only when the pending restart is resolved or dismissed.
+  const [changedSections, setChangedSections] = useState<Set<string>>(new Set())
   const [restarting, setRestarting] = useState(false)
   const transition = useSpringTransition()
+  // Same swap speed as the setup wizard's own step transitions, not a
+  // separate faster tuning - see useStepTransition's own comment.
+  const tabTransition = useStepTransition()
+  const [activeTab, setActiveTab] = useState<SettingsTab>('general')
+  // Which way the incoming tab should slide in from: 1 (right) when moving
+  // to a tab further along the bar, -1 (left) moving back toward "Общие" -
+  // so the motion mirrors the click's position on the tab bar itself instead
+  // of being the same for every switch.
+  const [tabDirection, setTabDirection] = useState(1)
+
+  function changeTab(next: SettingsTab) {
+    setTabDirection(TAB_ORDER.indexOf(next) < TAB_ORDER.indexOf(activeTab) ? -1 : 1)
+    setActiveTab(next)
+  }
 
   // Leaving the screen mid-run must not keep polling a dead component.
-  useEffect(() => () => stopPolling(), [])
   useEffect(() => () => stopUpdatePolling(), [])
   useEffect(() => () => stopAppApplyPolling(), [])
 
@@ -476,10 +299,10 @@ export function SettingsScreen() {
   }
 
   async function noteChange(patch: Record<string, unknown>) {
-    const scopes = Object.keys(patch)
-      .map((key) => RESTART_SCOPE[key])
-      .filter(Boolean)
-    if (scopes.length === 0) return
+    const scopedKeys = Object.keys(patch).filter((key) => RESTART_SCOPE[key])
+    if (scopedKeys.length === 0) return
+    const scopes = scopedKeys.map((key) => RESTART_SCOPE[key])
+    setChangedSections((prev) => new Set([...prev, ...scopedKeys]))
 
     if (scopes.includes('app')) {
       // App beats bridge: relaunching restarts the bridge too, so offering the
@@ -528,8 +351,9 @@ export function SettingsScreen() {
       setAutostart({ enabled: result.enabled, minimized: result.minimized })
       setAutostartError(result.ok ? null : result.error)
     } catch (err) {
+      logBridgeError(err)
       setAutostart({ enabled: false, minimized })
-      setAutostartError(String(err))
+      setAutostartError(strings.common.unexpectedError)
     }
   }
 
@@ -550,7 +374,8 @@ export function SettingsScreen() {
       // restart for.
       if (result.ok) noteChange(patch)
     } catch (err) {
-      setConfigError(String(err))
+      logBridgeError(err)
+      setConfigError(strings.common.unexpectedError)
     }
   }
 
@@ -563,10 +388,15 @@ export function SettingsScreen() {
    * that was not running needs neither - the next start will pick the new
    * values up on its own, so the banner just clears.
    */
+  function dismissPendingRestart() {
+    setPendingRestart(null)
+    setChangedSections(new Set())
+  }
+
   async function applyPendingRestart() {
     const scope = pendingRestart
     if (scope === null || !isNativeBridgeAvailable()) {
-      setPendingRestart(null)
+      dismissPendingRestart()
       return
     }
     setRestarting(true)
@@ -588,9 +418,10 @@ export function SettingsScreen() {
           return
         }
       }
-      setPendingRestart(null)
+      dismissPendingRestart()
     } catch (err) {
-      setConfigError(String(err))
+      logBridgeError(err)
+      setConfigError(strings.common.unexpectedError)
     } finally {
       setRestarting(false)
     }
@@ -677,131 +508,6 @@ export function SettingsScreen() {
     setConfirmRequest(request)
   }
 
-  const activeIdFor = (kind: ProfileKind) =>
-    kind === 'ecast' ? profiles?.active_ecast : profiles?.active_blobcast
-
-  const profilesOfKind = (kind: ProfileKind) =>
-    profiles?.items.filter((p) => p.kind === kind) ?? []
-
-  // Which profile the panel is EDITING - deliberately not the same question
-  // as which one is in use. There can be several profiles of a kind and only
-  // one is active, so editing an inactive one has to be possible; conflating
-  // the two would mean a profile could only be configured by first switching
-  // the running bridge onto it.
-  const edited =
-    profiles?.items.find((p) => p.id === editingId) ?? profiles?.items[0] ?? null
-
-  /** Writes the whole items array: _deep_merge replaces lists rather than
-   *  merging them, so a partial patch here would drop every other profile. */
-  function patchProfile(id: string, changes: Partial<Profile>) {
-    if (!profiles) return
-    persistChecked({
-      profiles: { items: profiles.items.map((p) => (p.id === id ? { ...p, ...changes } : p)) },
-    })
-  }
-
-  function patchEcast(profile: Profile, changes: Partial<EcastSettings>) {
-    patchProfile(profile.id, { ecast: { ...profile.ecast, ...changes } })
-  }
-
-  function activateProfile(profile: Profile) {
-    const key = profile.kind === 'ecast' ? 'active_ecast' : 'active_blobcast'
-    persistChecked({ profiles: { [key]: profile.id } })
-  }
-
-  /**
-   * "+" creates a profile and opens it. Its address starts as the official
-   * one for its kind rather than empty: an empty upstream fails validation,
-   * so a blank field would greet the user with an error they did nothing to
-   * cause. Everything else is schema defaults, which is what "empty" means
-   * here.
-   */
-  async function addProfile() {
-    if (!profiles) return
-    const template = profiles.items.find((p) => p.kind === 'ecast' && p.builtin)
-    if (!template) return
-    const id = `custom-${Date.now()}`
-    await persistChecked({
-      profiles: {
-        items: [
-          ...profiles.items,
-          {
-            ...template,
-            id,
-            name: strings.settings.profilesNewName,
-            kind: 'ecast' as ProfileKind,
-            builtin: false,
-          },
-        ],
-      },
-    })
-    setEditingId(id)
-  }
-
-  /**
-   * Changing an existing profile's kind. Both settings blocks live on every
-   * profile, so this is lossless in both directions - switch to Blobcast and
-   * back and the Ecast rewriting is still there.
-   *
-   * If it was the active profile of its old kind, that kind is left pointing
-   * at something that is no longer of that kind. The backend falls back to
-   * the built-in when resolving, but the id would stay dangling in the
-   * config, so it is repointed here in the same write.
-   */
-  function changeKind(profile: Profile, kind: ProfileKind) {
-    if (!profiles || profile.builtin || profile.kind === kind) return
-    const patch: Record<string, unknown> = {
-      items: profiles.items.map((p) => (p.id === profile.id ? { ...p, kind } : p)),
-    }
-    if (activeIdFor(profile.kind) === profile.id) {
-      const key = profile.kind === 'ecast' ? 'active_ecast' : 'active_blobcast'
-      patch[key] = profilesOfKind(profile.kind).find((p) => p.builtin)?.id
-    }
-    persistChecked({ profiles: patch })
-  }
-
-  async function openTransfer() {
-    setTransferReport(null)
-    setTransferOpen(true)
-    if (!isNativeBridgeAvailable()) return
-    const result = await callBridge<{ ok: boolean; error: string | null; json: string }>(
-      'export_profiles',
-    )
-    if (result.ok) setTransferText(result.json)
-    else setConfigError(result.error)
-  }
-
-  async function runTransfer(method: string, ...args: unknown[]) {
-    if (!isNativeBridgeAvailable()) return
-    const result = await callBridge<{
-      ok: boolean
-      error: string | null
-      config: AppConfig | null
-      report: { added: number; skipped: { name: string; reason: string }[] } | null
-      json?: string
-    }>(method, ...args)
-    if (!result.ok) return setConfigError(result.error)
-    setConfigError(null)
-    if (result.config) applyConfig(result.config)
-    if (result.report) setTransferReport(result.report)
-    if (result.json) setTransferText(result.json)
-  }
-
-  function deleteProfile(profile: Profile) {
-    if (!profiles) return
-    // If the deleted one was selected, point the kind back at its built-in in
-    // the same write. The backend already falls back when resolving, but a
-    // dangling id would leave the <select> showing nothing at all.
-    const patch: Record<string, unknown> = {
-      items: profiles.items.filter((p) => p.id !== profile.id),
-    }
-    if (activeIdFor(profile.kind) === profile.id) {
-      const key = profile.kind === 'ecast' ? 'active_ecast' : 'active_blobcast'
-      patch[key] = profilesOfKind(profile.kind).find((p) => p.builtin)?.id
-    }
-    persistChecked({ profiles: patch })
-  }
-
   async function pickTempDir() {
     if (!isNativeBridgeAvailable()) return
     const result = await callBridge<{ ok: boolean; error: string | null }>('pick_temp_dir')
@@ -858,9 +564,10 @@ export function SettingsScreen() {
           setAppApplyError(progress.error)
         }
       } catch (err) {
+        logBridgeError(err)
         stopAppApplyPolling()
         setAppApplyState('error')
-        setAppApplyError(String(err))
+        setAppApplyError(strings.common.unexpectedError)
       }
     }, 1000)
   }
@@ -903,9 +610,10 @@ export function SettingsScreen() {
         setUpdateProgress(progress)
         if (progress.done) stopUpdatePolling()
       } catch (err) {
+        logBridgeError(err)
         stopUpdatePolling()
         setUpdateProgress({
-          ok: false, error: String(err), done: true, phase: 'idle',
+          ok: false, error: strings.common.unexpectedError, done: true, phase: 'idle',
           received: 0, total: 0, applied: [], version: null, strategies: null,
         })
       }
@@ -940,296 +648,67 @@ export function SettingsScreen() {
     else setHostlistError(result.error)
   }
 
-  function stopPolling() {
-    clearPoll(pollRef)
+  // Shared by the tab panel's motion.div below. The entrance slides in from
+  // the side the clicked tab sits on relative to the one leaving - right when
+  // moving further along the bar, left moving back - so the motion mirrors
+  // where the click landed. Only the entrance is directional, same reasoning
+  // as the setup wizard's own step transitions (see useStepTransition):
+  // AnimatePresence keeps the outgoing element's exit props from ITS OWN last
+  // render, which can be a stale direction left over from an earlier switch,
+  // not the one happening now - directional exits would occasionally slide
+  // the wrong way. Which side it entered from was never load-bearing either.
+  const tabPanelMotion = {
+    initial: { opacity: 0, x: tabDirection * 18 },
+    animate: { opacity: 1, x: 0, transition: tabTransition.in },
+    exit: { opacity: 0, transition: tabTransition.out },
   }
 
-  async function runStrategyTest() {
-    setStrategyTest('running')
-    setDiagError(null)
-    setExportError(null)
-    setStrategyResults([])
-    setFastestKey(null)
-    setStrategyTotal(0)
-    setRunningStage(targetSet === 'blobcast' ? 'blobcast' : 'ecast')
-    setStrategyPopupOpen(true)
-    if (!isNativeBridgeAvailable()) {
-      window.setTimeout(() => setStrategyTest('done'), 1200)
-      return
-    }
-
-    // The suite runs for minutes, so it's a background job on the backend:
-    // start it, then poll. Waiting on one long call is what previously let a
-    // timeout throw away every result that had already been measured.
-    const started = await callBridge<TestStrategiesStart>('test_strategies', !testHeavy, targetSet)
-    if (!started.ok) {
-      setStrategyTest('error')
-      setDiagError(started.error)
-      return
-    }
-    setStrategyTotal(started.total)
-
-    stopPolling()
-    pollRef.current = window.setInterval(async () => {
-      try {
-        const progress = await callBridge<TestStrategiesProgress>('test_strategies_progress')
-        setStrategyResults(progress.results ?? [])
-        setFastestKey(progress.fastestKey ?? null)
-        if (progress.stage) setRunningStage(progress.stage)
-        if (progress.done) {
-          stopPolling()
-          setRunningStage(null)
-          setStrategyTest(progress.error ? 'error' : 'done')
-          setDiagError(progress.error)
-        }
-      } catch (err) {
-        stopPolling()
-        setRunningStage(null)
-        setStrategyTest('error')
-        setDiagError(String(err))
-      }
-    }, STRATEGY_POLL_MS)
-  }
-
-  async function exportStrategyResults(fmt: 'json' | 'html') {
-    setExportError(null)
-    if (!isNativeBridgeAvailable()) return
-    const result = await callBridge<{ ok: boolean; error: string | null; path: string }>(
-      'export_strategy_results',
-      fmt,
-    )
-    if (!result.ok) setExportError(result.error)
-  }
-
-  function applyStrategy(key: string) {
-    handleStrategyChange(key)
-    closeStrategyPopup()
-  }
-
-  function closeStrategyPopup() {
-    stopPolling()
-    if (isNativeBridgeAvailable()) {
-      // Without this the backend keeps cycling Zapret through every remaining
-      // strategy after the popup is gone, leaving winws.exe running on
-      // whichever one it reached. Cancel also restores the configured strategy.
-      callBridge('test_strategies_cancel').catch(() => {})
-    }
-    setStrategyPopupOpen(false)
-    setStrategyTest('idle')
-    setRunningStage(null)
-    setExportError(null)
-  }
-
-  /** One rewrite row, scoped to the profile being edited. Uncontrolled with
-   *  a per-profile `key`, so switching profiles reloads the values instead of
-   *  needing a draft map keyed by profile AND field. */
-  function ecastRow(
-    profile: Profile,
-    field: EcastField,
-    label: string,
-    hint: string,
-    flag?: EcastFlag,
-  ) {
-    const on = flag ? profile.ecast[flag] : true
-    const isList = field === 'server_keys' || field === 'room_id_keys'
-    const current = profile.ecast[field]
-    return (
-      <Row
-        key={field}
-        label={label}
-        hint={hint}
-        control={
-          <div className="bb-field-row">
-            {flag && (
-              <Toggle
-                checked={on}
-                label={label}
-                onChange={(v) => patchEcast(profile, { [flag]: v })}
-              />
-            )}
-            <input
-              key={`${field}-${profile.id}`}
-              className="bb-input bb-input--wide text-mono"
-              disabled={!on}
-              spellCheck={false}
-              defaultValue={Array.isArray(current) ? current.join(', ') : current}
-              onBlur={(e) => {
-                const value = isList ? splitKeys(e.target.value) : e.target.value.trim()
-                if (JSON.stringify(value) === JSON.stringify(current)) return
-                patchEcast(profile, { [field]: value })
-              }}
-            />
-          </div>
-        }
-      />
-    )
-  }
-
-  function ecastRows(profile: Profile) {
-    return (
-      <>
-        <Row
-          label={strings.settings.profilesEcastForwardAllLabel}
-          hint={strings.settings.profilesEcastForwardAllHint}
-          control={
-            <Toggle
-              checked={profile.ecast.forward_all}
-              label={strings.settings.profilesEcastForwardAllLabel}
-              onChange={(v) => patchEcast(profile, { forward_all: v })}
-            />
-          }
-        />
-        <Row
-          label={strings.settings.profilesEcastPathsLabel}
-          hint={strings.settings.profilesEcastPathsHint}
-          control={
-            <input
-              key={`ecast-paths-${profile.id}`}
-              className="bb-input bb-input--wide text-mono"
-              // Only meaningful with "весь трафик" off - disabled rather than
-              // hidden so the current list stays readable either way.
-              disabled={profile.ecast.forward_all}
-              defaultValue={profile.ecast.paths.join(', ')}
-              spellCheck={false}
-              onBlur={(e) => {
-                const paths = splitKeys(e.target.value)
-                if (JSON.stringify(paths) === JSON.stringify(profile.ecast.paths)) return
-                patchEcast(profile, { paths })
-              }}
-            />
-          }
-        />
-
-        <div className="bb-subheading">
-          <span className="text-subtitle">{strings.settings.profilesEcastSettingsTitle}</span>
-          <span className="text-caption">{strings.settings.profilesEcastSettingsHint}</span>
-        </div>
-        {ecastRow(
-          profile,
-          'server_keys',
-          strings.settings.serverKeysLabel,
-          strings.settings.serverKeysHint,
-          'server_enabled',
-        )}
-        {ecastRow(
-          profile,
-          'room_id_keys',
-          strings.settings.roomIdKeysLabel,
-          strings.settings.roomIdKeysHint,
-        )}
-        {ecastRow(
-          profile,
-          'upstream_origin',
-          strings.settings.upstreamOriginLabel,
-          strings.settings.upstreamOriginHint,
-          'origin_enabled',
-        )}
-        {ecastRow(
-          profile,
-          'fallback_user_agent',
-          strings.settings.userAgentLabel,
-          strings.settings.userAgentHint,
-          'user_agent_enabled',
-        )}
-      </>
-    )
-  }
-
-  function patchBlobcast(profile: Profile, changes: Partial<BlobcastSettings>) {
-    patchProfile(profile.id, { blobcast: { ...profile.blobcast, ...changes } })
-  }
-
-  function blobcastRows(profile: Profile) {
-    const b = profile.blobcast
-    return (
-      <>
-        <div className="bb-subheading">
-          <span className="text-subtitle">{strings.settings.profilesBlobcastSettingsTitle}</span>
-        </div>
-        <Row
-          label={strings.settings.profilesInterceptLabel}
-          hint={strings.settings.profilesInterceptHint}
-          control={
-            <Toggle
-              checked={b.intercept_session}
-              label={strings.settings.profilesInterceptLabel}
-              onChange={(v) => patchBlobcast(profile, { intercept_session: v })}
-            />
-          }
-        />
-        <Row
-          label={strings.settings.profilesLocalNameLabel}
-          hint={strings.settings.profilesLocalNameHint}
-          control={
-            <input
-              key={`local-${profile.id}`}
-              className="bb-input bb-input--wide text-mono"
-              defaultValue={b.local_server_name}
-              disabled={!b.intercept_session}
-              spellCheck={false}
-              onBlur={(e) => {
-                const name = e.target.value.trim()
-                if (!name || name === b.local_server_name) return
-                patchBlobcast(profile, { local_server_name: name })
-              }}
-            />
-          }
-        />
-        <Row
-          label={strings.settings.profilesSocketioPortLabel}
-          hint={strings.settings.profilesSocketioPortHint}
-          control={
-            <input
-              key={`port-${profile.id}`}
-              className="bb-input bb-input--narrow text-mono"
-              defaultValue={String(b.socketio_port)}
-              inputMode="numeric"
-              onBlur={(e) => {
-                const port = Number(e.target.value.replace(/\D/g, ''))
-                if (!port || port === b.socketio_port) return
-                patchBlobcast(profile, { socketio_port: port })
-              }}
-            />
-          }
-        />
-        <Row
-          label={strings.settings.profilesLogFramesLabel}
-          hint={strings.settings.profilesLogFramesHint}
-          control={
-            <Toggle
-              checked={b.log_frames}
-              label={strings.settings.profilesLogFramesLabel}
-              onChange={(v) => patchBlobcast(profile, { log_frames: v })}
-            />
-          }
-        />
-        <Row
-          label={strings.settings.profilesBlobcastPathsLabel}
-          hint={strings.settings.profilesBlobcastPathsHint}
-          control={
-            <input
-              key={`paths-${profile.id}`}
-              className="bb-input bb-input--wide text-mono"
-              defaultValue={b.paths.join(', ')}
-              spellCheck={false}
-              onBlur={(e) => {
-                const paths = splitKeys(e.target.value)
-                if (JSON.stringify(paths) === JSON.stringify(b.paths)) return
-                patchBlobcast(profile, { paths })
-              }}
-            />
-          }
-        />
-      </>
-    )
-  }
+  // Both hooks split their return into a tab-gated part and a modal that
+  // must survive switching tabs - see each hook's own docstring for why.
+  const strategyTest = useStrategyTestPanel(handleStrategyChange)
+  const profilesTab = useProfilesTab({
+    profiles,
+    persistChecked,
+    applyConfig,
+    confirmThenRun,
+    configError,
+    setConfigError,
+  })
 
   return (
     <div>
-      <h1 className="text-display" style={{ marginBottom: 'var(--space-6)' }}>
+      <h1 className="text-display" style={{ marginBottom: 'var(--space-4)' }}>
         {strings.settings.title}
       </h1>
 
+      <div className="bb-settings-tabs">
+        <Segmented<SettingsTab>
+          value={activeTab}
+          onChange={changeTab}
+          ariaLabel={strings.settings.tabsAriaLabel}
+          options={[
+            { value: 'network', label: strings.settings.tabNetwork },
+            { value: 'profiles', label: strings.settings.tabProfiles },
+            { value: 'general', label: strings.settings.tabGeneral },
+            { value: 'updates', label: strings.settings.tabUpdates },
+            { value: 'system', label: strings.settings.systemSectionTitle },
+          ]}
+        />
+      </div>
+
+      {/* One AnimatePresence around the whole switch, keyed by activeTab, not
+          one per tab: six independent AnimatePresences (the first version of
+          this) each fire their own exit/enter at the same instant, so the
+          outgoing tab's Sections and the incoming tab's Sections are BOTH in
+          the DOM for the ~0.13s exit - taking up layout space simultaneously,
+          which briefly grows the page past its normal height and pops the
+          scrollbar in and out. mode="wait" on ONE shared instance forces the
+          old content to fully leave before the new content mounts, so only
+          one tab's height is ever on screen at a time. */}
+      <AnimatePresence mode="wait" initial={false}>
+      <motion.div key={activeTab} {...tabPanelMotion}>
+      {activeTab === 'general' && (
+      <>
       <Section
         title={strings.settings.appearanceSectionTitle}
         description={strings.settings.appearanceSectionDescription}
@@ -1253,12 +732,37 @@ export function SettingsScreen() {
         <Row
           label={strings.settings.darkThemeLabel}
           control={
-            <Toggle checked={theme === 'dark'} onChange={(v) => setTheme(v ? 'dark' : 'light')} />
+            <Toggle
+              checked={theme === 'dark'}
+              onChange={(v) => setTheme(v ? 'dark' : 'light')}
+              label={strings.settings.darkThemeLabel}
+            />
           }
         />
         <Row
           label={strings.settings.animationsLabel}
-          control={<Toggle checked={animationsEnabled} onChange={setAnimationsEnabled} />}
+          control={
+            <Toggle
+              checked={animationsEnabled}
+              onChange={setAnimationsEnabled}
+              label={strings.settings.animationsLabel}
+            />
+          }
+        />
+        <Row
+          label={strings.settings.animationDurationLabel}
+          hint={strings.settings.animationDurationHint}
+          control={
+            <input
+              className="bb-input bb-input--narrow text-mono"
+              value={animationDurationInput}
+              disabled={!animationsEnabled}
+              onChange={(e) => setAnimationDurationInput(e.target.value.replace(/\D/g, ''))}
+              onBlur={commitAnimationDuration}
+              inputMode="numeric"
+              aria-label={strings.settings.animationDurationLabel}
+            />
+          }
         />
       </Section>
 
@@ -1276,6 +780,7 @@ export function SettingsScreen() {
             <Toggle
               checked={autostart.enabled}
               onChange={(v) => changeAutostart(v, autostart.minimized)}
+              label={strings.settings.autostartLabel}
             />
           }
         />
@@ -1287,6 +792,7 @@ export function SettingsScreen() {
               <Toggle
                 checked={autostart.minimized}
                 onChange={(v) => changeAutostart(true, v)}
+                label={strings.settings.autostartMinimizedLabel}
               />
             }
           />
@@ -1301,6 +807,7 @@ export function SettingsScreen() {
                 setStartBridgeOnLaunch(v)
                 persist({ ui: { start_bridge_on_launch: v } })
               }}
+              label={strings.settings.startBridgeOnLaunchLabel}
             />
           }
         />
@@ -1314,70 +821,16 @@ export function SettingsScreen() {
                 setMinimizeToTray(v)
                 persist({ ui: { minimize_to_tray: v } })
               }}
+              label={strings.settings.minimizeToTrayLabel}
             />
           }
         />
         {autostartError && <p className="text-caption bb-diag__error">{autostartError}</p>}
       </Section>
+      </>
+      )}
 
-      <Section
-        title={strings.settings.systemSectionTitle}
-        description={strings.settings.systemSectionDescription}
-      >
-        <Row
-          label={strings.settings.hideConsoleLabel}
-          hint={strings.settings.hideConsoleHint}
-          control={<Toggle checked={hideConsole} onChange={handleHideConsoleChange} />}
-        />
-        <Row
-          label={strings.settings.portLabel}
-          hint={strings.settings.portHint}
-          control={
-            <div className="bb-field-row">
-              <input
-                className="bb-input bb-input--narrow text-mono"
-                value={port}
-                onChange={(e) => setPort(e.target.value.replace(/\D/g, ''))}
-                onBlur={handlePortBlur}
-                inputMode="numeric"
-                aria-label={strings.settings.portAriaLabel}
-              />
-              <Button
-                variant="ghost"
-                onClick={() =>
-                  confirmThenRun({
-                    id: 'reset-port',
-                    title: strings.settings.resetPortConfirmTitle,
-                    body: strings.settings.resetPortConfirmBody,
-                    confirmLabel: strings.settings.resetPortButton,
-                    action: resetPort,
-                  })
-                }
-              >
-                {strings.settings.resetPortButton}
-              </Button>
-            </div>
-          }
-        />
-        <Row
-          label={strings.settings.tempDirLabel}
-          hint={strings.settings.tempDirHint}
-          control={
-            <div className="bb-field-row">
-              <input
-                className="bb-input bb-input--wide text-mono"
-                readOnly
-                value={tempDir?.resolved ?? ''}
-                title={tempDir?.resolved ?? ''}
-              />
-              <Button variant="secondary" onClick={pickTempDir}>
-                {strings.settings.tempDirButton}
-              </Button>
-            </div>
-          }
-        />
-      </Section>
-
+      {activeTab === 'network' && (
       <Section title={strings.settings.networkSectionTitle} description={strings.settings.networkSectionDescription}>
         <Row
           label={strings.settings.strategyLabel}
@@ -1394,6 +847,7 @@ export function SettingsScreen() {
                   <optgroup key={group} label={strategyGroupLabel(group, strings)}>
                     {strategyGroups[group].map((opt) => (
                       <option key={opt.key} value={opt.key}>
+                        {opt.aggressive ? strings.settings.strategyAggressiveMarker : ''}
                         {opt.name}
                       </option>
                     ))}
@@ -1402,6 +856,15 @@ export function SettingsScreen() {
             </select>
           }
         />
+        {/* A native <select>'s options can't carry a tooltip, only the ⚠
+            prefix above - so the actual explanation for the CURRENTLY chosen
+            strategy sits here, where it's impossible to miss right after
+            picking one. Confirmed against a real regression: Alternative 5's
+            unfooled syndata desync corrupted Blobcast's WebSocket ~20-30s in
+            (see zapret/strategies.py's _is_aggressive doc comment). */}
+        {selectedStrategyIsAggressive && (
+          <div className="bb-strategy-warning">{strings.settings.strategyAggressiveWarning}</div>
+        )}
         {/* Right under the strategy picker: the hostlist is what the chosen
             strategy is pointed at, so the two only make sense together. It
             used to sit below the test controls, three rows away. */}
@@ -1414,51 +877,12 @@ export function SettingsScreen() {
             </Button>
           }
         />
-        <Row
-          label={strings.settings.strategyTargetSetLabel}
-          hint={strings.settings.strategyTargetSetHint}
-          control={
-            <Segmented<TargetSet | 'both'>
-              value={targetSet}
-              disabled={strategyTest === 'running'}
-              ariaLabel={strings.settings.strategyTargetSetLabel}
-              options={[
-                { value: 'ecast', label: strings.settings.profilesKindEcast },
-                { value: 'blobcast', label: strings.settings.profilesKindBlobcast },
-                { value: 'both', label: strings.settings.strategyTargetSetBoth },
-              ]}
-              onChange={setTargetSet}
-            />
-          }
-        />
-        <Row
-          label={strings.settings.strategyTestLabel}
-          hint={strings.settings.strategyTestHint}
-          control={
-            <div className="bb-diag">
-              <Button
-                variant="secondary"
-                onClick={runStrategyTest}
-                disabled={strategyTest === 'running'}
-              >
-                {strategyTest === 'running'
-                  ? strings.settings.strategyTestButtonRunning
-                  : strings.settings.strategyTestButtonIdle}
-              </Button>
-              <DiagBadge state={strategyTest} />
-            </div>
-          }
-        />
-        <Row
-          label={strings.settings.testHeavyLabel}
-          hint={strings.settings.testHeavyHint}
-          control={<Toggle checked={testHeavy} onChange={setTestHeavy} />}
-        />
-        {diagError && !strategyPopupOpen && (
-          <p className="text-caption bb-diag__error">{diagError}</p>
-        )}
+        {strategyTest.trigger}
       </Section>
+      )}
 
+      {activeTab === 'updates' && (
+      <>
       <Section
         title={strings.settings.updateSectionTitle}
         description={strings.settings.updateSectionDescription}
@@ -1479,6 +903,7 @@ export function SettingsScreen() {
                 setCheckOnStartup(v)
                 persist({ update: { check_on_startup: v } })
               }}
+              label={strings.settings.updateCheckOnStartupLabel}
             />
           }
         />
@@ -1552,6 +977,7 @@ export function SettingsScreen() {
                 setAppCheckOnStartup(v)
                 persist({ app_update: { check_on_startup: v } })
               }}
+              label={strings.settings.updateCheckOnStartupLabel}
             />
           }
         />
@@ -1633,171 +1059,84 @@ export function SettingsScreen() {
           <p className="text-caption bb-diag__error">{appUpdateInfo.error}</p>
         )}
       </Section>
+      </>
+      )}
 
+      {activeTab === 'profiles' && profilesTab.section}
+
+      {activeTab === 'system' && (
+      <>
       <Section
-        title={strings.settings.profilesSectionTitle}
-        description={strings.settings.profilesSectionDescription}
+        title={strings.settings.systemSectionTitle}
+        description={strings.settings.systemSectionDescription}
       >
         <Row
-          label={strings.settings.profilesPickerLabel}
-          hint={strings.settings.profilesPickerHint}
+          label={strings.settings.hideConsoleLabel}
+          hint={strings.settings.hideConsoleHint}
+          control={
+            <Toggle
+              checked={hideConsole}
+              onChange={handleHideConsoleChange}
+              label={strings.settings.hideConsoleLabel}
+            />
+          }
+        />
+        <Row
+          label={strings.settings.portLabel}
+          hint={strings.settings.portHint}
           control={
             <div className="bb-field-row">
-              <select
-                className="bb-input bb-input--wide"
-                value={edited?.id ?? ''}
-                onChange={(e) => setEditingId(e.target.value)}
-              >
-                {(['ecast', 'blobcast'] as ProfileKind[]).map((kind) => (
-                  <optgroup
-                    key={kind}
-                    label={
-                      kind === 'ecast'
-                        ? `${strings.settings.profilesKindEcast} — ${strings.settings.profilesKindEcastHint}`
-                        : `${strings.settings.profilesKindBlobcast} — ${strings.settings.profilesKindBlobcastHint}`
-                    }
-                  >
-                    {profilesOfKind(kind).map((profile) => (
-                      <option key={profile.id} value={profile.id}>
-                        {profile.name}
-                        {activeIdFor(kind) === profile.id
-                          ? ` (${strings.settings.profilesActiveBadge})`
-                          : ''}
-                      </option>
-                    ))}
-                  </optgroup>
-                ))}
-              </select>
+              <input
+                className="bb-input bb-input--narrow text-mono"
+                value={port}
+                onChange={(e) => setPort(e.target.value.replace(/\D/g, ''))}
+                onBlur={handlePortBlur}
+                inputMode="numeric"
+                aria-label={strings.settings.portAriaLabel}
+              />
               <Button
                 variant="ghost"
-                onClick={addProfile}
-                ariaLabel={strings.settings.profilesAddAriaLabel}
-                title={strings.settings.profilesAddAriaLabel}
+                onClick={() =>
+                  confirmThenRun({
+                    id: 'reset-port',
+                    title: strings.settings.resetPortConfirmTitle,
+                    body: strings.settings.resetPortConfirmBody,
+                    confirmLabel: strings.settings.resetPortButton,
+                    action: resetPort,
+                  })
+                }
               >
-                <IconPlus />
+                {strings.settings.resetPortButton}
               </Button>
             </div>
           }
         />
-
-        {edited && (
-          <>
-            <Row
-              label={strings.settings.profilesKindLabel}
-              hint={strings.settings.profilesKindHint}
-              control={
-                <Segmented<ProfileKind>
-                  value={edited.kind}
-                  disabled={edited.builtin}
-                  ariaLabel={strings.settings.profilesKindLabel}
-                  options={[
-                    { value: 'ecast', label: strings.settings.profilesKindEcast },
-                    { value: 'blobcast', label: strings.settings.profilesKindBlobcast },
-                  ]}
-                  onChange={(kind) => changeKind(edited, kind)}
-                />
-              }
-            />
-            <Row
-              label={strings.settings.profilesNameLabel}
-              control={
-                <input
-                  key={`name-${edited.id}`}
-                  className="bb-input bb-input--wide"
-                  defaultValue={edited.name}
-                  disabled={edited.builtin}
-                  onBlur={(e) => {
-                    const name = e.target.value.trim()
-                    if (name && name !== edited.name) patchProfile(edited.id, { name })
-                  }}
-                />
-              }
-            />
-            <Row
-              label={strings.settings.profilesUpstreamLabel}
-              hint={strings.settings.profilesUpstreamHint}
-              control={
-                <input
-                  key={`upstream-${edited.id}`}
-                  className="bb-input bb-input--wide text-mono"
-                  defaultValue={edited.upstream}
-                  disabled={edited.builtin}
-                  spellCheck={false}
-                  onBlur={(e) => {
-                    const upstream = e.target.value.trim()
-                    if (upstream && upstream !== edited.upstream)
-                      patchProfile(edited.id, { upstream })
-                  }}
-                />
-              }
-            />
-            <Row
-              label={strings.settings.profilesUseLabel}
-              hint={edited.builtin ? strings.settings.profilesBuiltinNote : undefined}
-              control={
-                <div className="bb-field-row">
-                  {activeIdFor(edited.kind) === edited.id ? (
-                    <span className="text-caption">{strings.settings.profilesInUseNote}</span>
-                  ) : (
-                    <Button variant="ghost" onClick={() => activateProfile(edited)}>
-                      {strings.settings.profilesUseButton}
-                    </Button>
-                  )}
-                  {!edited.builtin && (
-                    <Button
-                      variant="danger"
-                      ariaLabel={strings.settings.profilesDeleteAriaLabel}
-                      title={strings.settings.profilesDeleteAriaLabel}
-                      onClick={() =>
-                        confirmThenRun({
-                          id: 'delete-profile',
-                          title: strings.settings.profilesDeleteConfirmTitle,
-                          body: strings.settings.profilesDeleteConfirmBody,
-                          confirmLabel: strings.settings.profilesDeleteButton,
-                          danger: true,
-                          action: () => {
-                            setEditingId(null)
-                            deleteProfile(edited)
-                          },
-                        })
-                      }
-                    >
-                      <IconTrash />
-                    </Button>
-                  )}
-                </div>
-              }
-            />
-
-            {edited.kind === 'ecast' ? ecastRows(edited) : blobcastRows(edited)}
-
-            {/* Everything above about this profile - kind, name, address,
-                and its protocol settings - only applies after the bridge
-                restarts, so the note belongs once at the end of the editable
-                fields, the same place the hostlist modal puts its own. */}
-            <p className="text-caption">{strings.settings.profilesRestartNote}</p>
-          </>
-        )}
-
         <Row
-          label={strings.settings.profilesTransferLabel}
-          hint={strings.settings.profilesTransferHint}
+          label={strings.settings.tempDirLabel}
+          hint={strings.settings.tempDirHint}
           control={
-            <Button variant="ghost" onClick={openTransfer}>
-              {strings.settings.profilesExportButton} / {strings.settings.profilesImportButton}
-            </Button>
+            <div className="bb-field-row">
+              <input
+                className="bb-input bb-input--wide text-mono"
+                readOnly
+                value={tempDir?.resolved ?? ''}
+                title={tempDir?.resolved ?? ''}
+              />
+              <Button variant="secondary" onClick={pickTempDir}>
+                {strings.settings.tempDirButton}
+              </Button>
+            </div>
           }
         />
-        {/* Backend validation lands here now - the address and the rewrite
-            fields it checks both live in this section. */}
-        {configError && <p className="text-caption bb-diag__error">{configError}</p>}
       </Section>
 
-      {/* Last on the page and its own section, not folded into "Система":
-          this is the one action here that touches every other section on
-          this screen at once and cannot be undone, so it gets to be found by
-          scrolling to the end, not by reading past it on the way to the
-          port field. */}
+      {/* Folded into the "Система" tab rather than kept as its own: with
+          sections grouped into tabs there is no longer a long scroll to fall
+          to the end of, and putting it beside System keeps the two
+          rarely-touched, consequential settings together instead of adding a
+          sixth tab for one button. Still its own <Section>, last within the
+          tab, so the red-bordered chrome reads as a deliberate final step,
+          not something to breeze past on the way to the port field. */}
       <Section
         title={strings.settings.dangerZoneSectionTitle}
         description={strings.settings.dangerZoneSectionDescription}
@@ -1824,140 +1163,13 @@ export function SettingsScreen() {
           }
         />
       </Section>
-
-      <AnimatePresence>
-        {transferOpen && (
-          <Modal
-            title={strings.settings.profilesTransferModalTitle}
-            onClose={() => setTransferOpen(false)}
-            maxWidth={680}
-          >
-            <p className="text-body">{strings.settings.profilesTransferModalDescription}</p>
-            <textarea
-              className="bb-input bb-textarea text-mono"
-              rows={12}
-              spellCheck={false}
-              value={transferText}
-              onChange={(e) => setTransferText(e.target.value)}
-            />
-            {transferReport && (
-              <p className="text-caption">
-                {t(strings.settings.profilesImportDone, { added: transferReport.added })}
-                {transferReport.skipped.length > 0 &&
-                  ` · ${t(strings.settings.profilesImportSkipped, {
-                    count: transferReport.skipped.length,
-                  })}: ${transferReport.skipped.map((s) => `${s.name} (${s.reason})`).join('; ')}`}
-              </p>
-            )}
-            <div className="bb-field-row">
-              <Button variant="primary" onClick={() => runTransfer('import_profiles', transferText)}>
-                {strings.settings.profilesImportApplyButton}
-              </Button>
-              <Button variant="ghost" onClick={() => runTransfer('export_profiles_to_file')}>
-                {strings.settings.profilesExportFileButton}
-              </Button>
-              <Button variant="ghost" onClick={() => runTransfer('import_profiles_from_file')}>
-                {strings.settings.profilesImportFileButton}
-              </Button>
-            </div>
-            {configError && <p className="text-caption bb-diag__error">{configError}</p>}
-          </Modal>
-        )}
-        {strategyPopupOpen && (
-          <Modal title={strings.settings.strategyModalTitle} onClose={closeStrategyPopup} maxWidth={680}>
-            {strategyTest === 'running' && (
-              <p className="text-body">
-                {strategyTotal > 0
-                  ? t(strings.settings.strategyModalProgressWithTotal, {
-                      done: strategyResults.length,
-                      total: strategyTotal,
-                    })
-                  : strings.settings.strategyModalProgressNoTotal}
-                {/* Only worth stating during a "both" run - a single-set run
-                    already says which set via the picker above the button. */}
-                {targetSet === 'both' && runningStage && (
-                  <>
-                    {' '}
-                    {t(strings.settings.strategyModalStageLabel, {
-                      stage: stageLabel(runningStage, strings),
-                    })}
-                  </>
-                )}
-              </p>
-            )}
-            {strategyTest === 'error' && diagError && (
-              <p className="text-body bb-diag__error">{diagError}</p>
-            )}
-            {(['ecast', 'blobcast'] as const)
-              .map((stage) => ({ stage, rows: strategyResults.filter((r) => r.targetSet === stage) }))
-              .filter(({ rows }) => rows.length > 0)
-              .map(({ stage, rows }) => {
-                const columns = targetColumns(rows)
-                // The stage heading is only worth showing once there's more
-                // than one table on screen - a single-set run needs no label
-                // repeating what the picker above already said.
-                const showHeading = strategyResults.some((r) => r.targetSet !== stage)
-                return (
-                  <div key={stage} className="bb-strategy-stage">
-                    {showHeading && <p className="text-subtitle">{stageLabel(stage, strings)}</p>}
-                    <div
-                      className="bb-strategy-table"
-                      style={{ gridTemplateColumns: `1.4fr repeat(${columns.length}, 1fr) auto` }}
-                    >
-                      <div className="bb-strategy-table__row bb-strategy-table__row--head">
-                        <span>{strings.settings.strategyTableHeaderName}</span>
-                        {columns.map((name) => (
-                          <span key={name}>{name}</span>
-                        ))}
-                        <span></span>
-                      </div>
-                      {rows.map((r) => (
-                        <div key={r.key} className="bb-strategy-table__row">
-                          <span>
-                            {r.name}
-                            {r.key === fastestKey && (
-                              <span className="bb-strategy-table__badge">
-                                {strings.settings.strategyTableFastestBadge}
-                              </span>
-                            )}
-                          </span>
-                          {columns.map((name) => (
-                            <TargetCell key={name} target={r.targets?.[name]} />
-                          ))}
-                          <span>
-                            <Button variant="ghost" onClick={() => applyStrategy(r.key)}>
-                              {strings.settings.strategyTableApplyButton}
-                            </Button>
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )
-              })}
-            {(fastestKey || strategyResults.length > 0) && (
-              <div className="bb-strategy-actions">
-                {fastestKey && (
-                  <Button variant="primary" onClick={() => applyStrategy(fastestKey)}>
-                    {strings.settings.strategyModalApplyFastestButton}
-                  </Button>
-                )}
-                {strategyResults.length > 0 && (
-                  <>
-                    <Button variant="ghost" onClick={() => exportStrategyResults('json')}>
-                      {strings.settings.strategyExportJsonButton}
-                    </Button>
-                    <Button variant="ghost" onClick={() => exportStrategyResults('html')}>
-                      {strings.settings.strategyExportHtmlButton}
-                    </Button>
-                  </>
-                )}
-              </div>
-            )}
-            {exportError && <p className="text-caption bb-diag__error">{exportError}</p>}
-          </Modal>
-        )}
+      </>
+      )}
+      </motion.div>
       </AnimatePresence>
+
+      {profilesTab.modal}
+      {strategyTest.modal}
 
       <AnimatePresence>
         {hostlistOpen && (
@@ -2083,11 +1295,18 @@ export function SettingsScreen() {
             transition={transition}
           >
             <span className="bb-settings__dirty-text">
-              {pendingRestart === 'app'
-                ? strings.settings.dirtyApp
-                : strings.settings.dirtyBridge}
+              {t(pendingRestart === 'app' ? strings.settings.dirtyApp : strings.settings.dirtyBridge, {
+                sections:
+                  // Unique, in first-changed order (Set preserves insertion
+                  // order) - "Сеть и обход, Профили подключения", not a
+                  // bare "Настройки изменены" that could mean anything from
+                  // three edits ago.
+                  [...new Set(
+                    [...changedSections].map((key) => restartScopeLabels(strings)[key]),
+                  )].join(', '),
+              })}
             </span>
-            <Button variant="secondary" onClick={() => setPendingRestart(null)}>
+            <Button variant="secondary" onClick={dismissPendingRestart}>
               {strings.settings.dirtyDismiss}
             </Button>
             <Button onClick={applyPendingRestart} disabled={restarting}>
@@ -2139,42 +1358,5 @@ function StrategyChangeReport({ changes }: { changes: StrategyChanges | null }) 
         </p>
       ))}
     </div>
-  )
-}
-
-/** "Ecast"/"Blobcast" - reusing the same protocol-name strings the profile
- *  kind picker already shows, rather than a second copy of the same two
- *  words under a different key. */
-function stageLabel(stage: TargetSet, strings: ReturnType<typeof useStrings>): string {
-  return stage === 'ecast' ? strings.settings.profilesKindEcast : strings.settings.profilesKindBlobcast
-}
-
-/** Column names for one stage's table, read off the results themselves
- *  rather than hardcoded - a switch-failure row carries an empty targets
- *  object, so this takes the first row that actually has some. Every row in
- *  a stage was probed against the same target list (see _stages_for), so
- *  the first non-empty one is representative of the whole group. */
-function targetColumns(rows: StrategyResult[]): string[] {
-  for (const row of rows) {
-    const names = Object.keys(row.targets ?? {})
-    if (names.length > 0) return names
-  }
-  return []
-}
-
-function TargetCell({ target }: { target?: TargetResult }) {
-  const strings = useStrings()
-  if (!target) return <span className="text-caption">{strings.settings.strategyTableEmptyCell}</span>
-  if (!target.ok) {
-    return (
-      <span className="bb-strategy-table__fail" title={target.error ?? undefined}>
-        <IconClose size={14} />
-      </span>
-    )
-  }
-  return (
-    <span className="bb-strategy-table__ok text-numeric">
-      {Math.round(target.elapsedMs ?? 0)} {strings.settings.msUnit}
-    </span>
   )
 }

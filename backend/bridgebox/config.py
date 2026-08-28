@@ -146,7 +146,7 @@ class AppUpdateConfig(BaseModel):
 class LoggingConfig(BaseModel):
     level: Literal["debug", "info", "warning", "error"] = "info"
     dir: str = "logs/"
-    rotate_mb: int = Field(default=5, gt=0)
+    rotate_mb: int = Field(default=20, gt=0)
 
 
 class UiConfig(BaseModel):
@@ -159,6 +159,12 @@ class UiConfig(BaseModel):
     # content for that first second.
     theme: Literal["light", "dark"] = "dark"
     animations_enabled: bool = True
+    # The one dial every hook in frontend/src/lib/motion.ts scales its own
+    # (otherwise-hardcoded) duration against, so turning it moves every
+    # animation together instead of retuning each transition by hand. Bounds
+    # keep it from going either imperceptible or sluggish: below ~50ms reads
+    # as a glitch rather than motion, above 1s reads as the UI hanging.
+    animation_duration_ms: int = Field(default=220, ge=50, le=1000)
     # "system" resolves on the frontend from navigator.language, once, and the
     # result is what's actually shown - this field only remembers the user's
     # PREFERENCE (follow the OS, or a deliberate override), never a resolved

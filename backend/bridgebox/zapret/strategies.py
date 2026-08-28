@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
+from .strategy_adapt import AGGRESSIVE_DESYNC_MODE
+
 logger = logging.getLogger(__name__)
 
 GroupName = Literal["Основная", "Альтернативы", "Прочие"]
@@ -42,12 +44,32 @@ def _natural_sort_key(stem: str) -> tuple:
     return tuple(int(part) if part.isdigit() else part.lower() for part in parts)
 
 
+# Applies to any strategy .bat regardless of provenance (hand-written or
+# auto-adapted) - reads the rendered file's own arguments rather than trust a
+# comment, since strategy_adapt.py's render_bat() is the only other place
+# that needs this same answer and does so before the file exists. See
+# AGGRESSIVE_DESYNC_MODE's own comment for why `syndata` specifically.
+_AGGRESSIVE_DESYNC_RE = re.compile(r"--dpi-desync=([a-z,]+)", re.IGNORECASE)
+
+
+def _is_aggressive(bat_path: Path) -> bool:
+    try:
+        text = bat_path.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return False
+    return any(
+        AGGRESSIVE_DESYNC_MODE in match.group(1).lower().split(",")
+        for match in _AGGRESSIVE_DESYNC_RE.finditer(text)
+    )
+
+
 @dataclass(frozen=True)
 class Strategy:
     key: str
     filename: str
     path: Path
     group: GroupName
+    aggressive: bool = False
 
 
 @dataclass(frozen=True)
@@ -144,6 +166,7 @@ def discover_strategies(strategies_dir: str | Path) -> dict[str, Strategy]:
             filename=bat_path.name,
             path=bat_path,
             group=_group_for(bat_path.stem),
+            aggressive=_is_aggressive(bat_path),
         )
         logger.debug("discovered strategy %r -> %s [%s]", key, bat_path.name, _group_for(bat_path.stem))
 

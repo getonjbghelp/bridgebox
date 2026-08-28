@@ -81,6 +81,47 @@ async def test_pump_stops_on_explicit_close_message_without_forwarding_after():
     assert sink.sent == ["first"]
 
 
+async def test_pump_logs_the_real_close_code_and_reason(caplog):
+    """The bug this fixes: this session's Blobcast investigation had no
+    direct way to tell which side actually closed a relay, or why - it had
+    to be reconstructed from access-log timestamps and a missing "ended"
+    line on one of the two directions."""
+    source = FakeWS()
+    await source._inbox.put(aiohttp.WSMessage(aiohttp.WSMsgType.CLOSE, 1006, "abnormal closure"))
+    sink = FakeWS()
+
+    with caplog.at_level(logging.INFO, logger="bridgebox.server.relay"):
+        await pump(source, sink, label="ABCD upstream->game")
+
+    assert "code=1006" in caplog.text
+    assert "abnormal closure" in caplog.text
+
+
+async def test_pump_logs_the_exception_on_an_error_frame(caplog):
+    source = FakeWS()
+    await source._inbox.put(
+        aiohttp.WSMessage(aiohttp.WSMsgType.ERROR, ConnectionResetError("boom"), None)
+    )
+    sink = FakeWS()
+
+    with caplog.at_level(logging.INFO, logger="bridgebox.server.relay"):
+        await pump(source, sink, label="ABCD upstream->game")
+
+    assert "error=" in caplog.text
+    assert "boom" in caplog.text
+
+
+async def test_relay_logs_the_session_duration(caplog):
+    ws_a = FakeWS()
+    ws_b = FakeWS()
+    await ws_a.close()
+
+    with caplog.at_level(logging.INFO, logger="bridgebox.server.relay"):
+        await relay(ws_a, ws_b, label_a="game->upstream", label_b="upstream->game")
+
+    assert "relay session ended after" in caplog.text
+
+
 async def test_relay_forwards_both_directions_and_closes_peer_when_one_ends():
     ws_a = FakeWS()
     ws_b = FakeWS()

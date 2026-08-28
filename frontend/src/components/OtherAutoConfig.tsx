@@ -3,7 +3,7 @@ import { Modal } from './Modal'
 import { Button } from './Button'
 import { Toggle } from './Toggle'
 import { Spinner } from './Spinner'
-import { callBridge } from '../lib/bridge'
+import { callBridge, logBridgeError } from '../lib/bridge'
 import { useStrings, t } from '../lib/strings'
 import { clearPoll } from '../lib/poll'
 import './OtherAutoConfig.css'
@@ -55,10 +55,11 @@ export function OtherAutoConfig() {
   useEffect(() => () => clearPoll(pollRef), [])
 
   function failed(mode: 'apply' | 'revert', err: unknown) {
+    logBridgeError(err)
     setStep({
       kind: 'done',
       mode,
-      result: { ok: false, error: err instanceof Error ? err.message : String(err), results: {} },
+      result: { ok: false, error: strings.common.unexpectedError, results: {} },
     })
   }
 

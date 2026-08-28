@@ -1,5 +1,18 @@
 [
   {
+    "version": "0.1.5 (b1)",
+    "date": "2026-08-28",
+    "level": "minor",
+    "ru": {
+      "title": "Прогреваем Сервера",
+      "body": "В этой версии мост быстрее выходит на связь с серверами. **После запуска он в фоне заранее открывает соединения с серверами из активных профилей Ecast и Blobcast.** Если прогрев проходит успешно, **первый запрос игры может сразу использовать готовое соединение.** Запуск при этом не задерживается: если сервер недоступен, мост продолжает работать по прежнему сценарию.\n\nЧто ещё изменилось:\n- Стратегии Zapret с агрессивным режимом (syndata) теперь отмечаются в интерфейсе. Перед их применением BridgeBox предупреждает, что они могут хуже работать с долгими Blobcast-соединениями.\n- Сетевые логи стали информативнее: в них видны DNS-запросы, установка TCP/TLS-соединения, повторное использование соединений, общее время запроса и длительность WebSocket-сессий. Чувствительные данные по-прежнему скрываются.\n- Тест стратегий теперь проверяет Ecast и Blobcast за один запуск и показывает результаты в одной таблице.\n- Настройки разбиты на вкладки, сложные поля профилей свернуты, переключение между разделами стало плавнее. Добавлена общая настройка скорости анимаций.\n- Запуск portable-версии ускорен: сборка перешла на формат one-directory, а экран загрузки теперь плавно сменяется интерфейсом.\n- Экран логов лучше использует ширину окна, а сообщения об ошибках стали понятнее."
+    },
+    "en": {
+      "title": "Warming Servers Up",
+      "body": "In this version, the bridge connects to servers faster. **After launch, it proactively opens connections to servers from active Ecast and Blobcast profiles in the background.** If warm-up is successful, **the first game request can immediately use the opened connection.** There is no delay in startup: if a server is unavailable, the bridge continues to operate as usual.\n\nWhat else has changed:\n- Zapret strategies with aggressive mode (syndata) are now marked in the interface. Before applying them, BridgeBox warns that they may perform worse with long Blobcast connections.\n- Network logs have become more informative: they show DNS requests, TCP/TLS connection establishment, connection reuse, total request time, and WebSocket session duration. Sensitive data is still hidden.\n- The strategy test now tests Ecast and Blobcast in a single run and displays the results in a single table.\n- Settings are now tabbed, complex profile fields are collapsed, and switching between sections is smoother. A general animation speed setting has been added.\n- Portable version startup has been sped up: the build has been moved to a single-directory format, and the loading screen now transitions smoothly to the interface.\n- The log screen now utilizes the window width better, and error messages are clearer."
+    }
+  },
+  {
     "version": "0.1.4 (b1)",
     "date": "2026-08-26",
     "level": "minor",

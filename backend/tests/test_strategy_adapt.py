@@ -181,6 +181,42 @@ def test_a_hostile_dpi_desync_value_never_reaches_the_rendered_bat(hostile_value
     assert "redirected" not in result.content
 
 
+# ---- the aggressive-strategy warning survives regeneration ----------------
+
+
+_SYNDATA_TEXT = (
+    '"%BIN%winws.exe" --filter-tcp=80,443 --hostlist="%LISTS%x.txt" '
+    '--dpi-desync=syndata,multidisorder --new '
+    '--filter-udp=443 --hostlist="%LISTS%x.txt" --dpi-desync=fake '
+    '--dpi-desync-fake-quic="%BIN%quic_initial_www_google_com.bin"'
+)
+
+_FOOLED_TEXT = (
+    '"%BIN%winws.exe" --filter-tcp=80,443 --hostlist="%LISTS%x.txt" '
+    '--dpi-desync=fake,multisplit --dpi-desync-fooling=ts --new '
+    '--filter-udp=443 --hostlist="%LISTS%x.txt" --dpi-desync=fake '
+    '--dpi-desync-fake-quic="%BIN%quic_initial_www_google_com.bin"'
+)
+
+
+def test_a_syndata_profile_gets_the_warning_comment_on_every_regeneration():
+    """The bug this guards: a hand-added "NOT RECOMMENDED" comment on
+    Alternative 5.bat was erased by the very next regeneration, because
+    render_bat() rewrites the whole header unconditionally. Deriving the
+    warning from the profile itself means there is nothing left to forget."""
+    result = adapt.adapt_strategy("general (ALT5).bat", _SYNDATA_TEXT)
+
+    assert result.ok
+    assert "NOT RECOMMENDED" in result.content
+
+
+def test_a_fooled_profile_gets_no_warning_comment():
+    result = adapt.adapt_strategy("general (ALT11).bat", _FOOLED_TEXT)
+
+    assert result.ok
+    assert "NOT RECOMMENDED" not in result.content
+
+
 def test_suggest_filename_maps_known_qualifier_families_to_their_pretty_name():
     """The bug this guards: without this mapping, an update recognized none
     of these by filename and added every one as a duplicate of a strategy

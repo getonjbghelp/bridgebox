@@ -40,7 +40,10 @@ function App() {
     const boot = document.getElementById('bb-boot')
     if (!boot) return
     boot.classList.add('bb-boot--done')
-    const id = window.setTimeout(() => boot.remove(), 200)
+    // Matches index.html's #bb-boot.bb-boot--done transition (500ms) plus a
+    // small margin - removing the node before its own fade finishes would
+    // cut the crossfade short instead of letting it complete.
+    const id = window.setTimeout(() => boot.remove(), 520)
     return () => window.clearTimeout(id)
   }, [setupComplete])
 
@@ -56,13 +59,29 @@ function App() {
   // frames in - or, on a machine busy with the backend's own startup work,
   // late enough that it reads as not playing at all. Warming them here makes
   // the first switch cost what the second one already did.
+  //
+  // Started only after the boot-skeleton crossfade above has finished, not
+  // in the same tick as it (the naive version of this effect) - setting
+  // data-prewarm forces three full screens through layout and paint
+  // synchronously, and doing that while #root/#bb-boot's own opacity
+  // transition is trying to draw its first frames starved that transition
+  // of exactly the frames it needed: the skeleton→app handover read as a
+  // hard cut instead of the fade its own CSS asks for, reproducibly, every
+  // launch. The wizard has no prewarming at all and never showed this -
+  // that contrast is what pointed at this effect rather than the CSS.
   useEffect(() => {
     if (setupComplete === null) return
-    setPrewarming(true)
-    // Two frames is enough for style, layout and paint to have run; the
-    // timeout is only a floor on that, not a guess at how long it takes.
-    const id = window.setTimeout(() => setPrewarming(false), 500)
-    return () => window.clearTimeout(id)
+    let stopId: number | undefined
+    const startId = window.setTimeout(() => {
+      setPrewarming(true)
+      // Two frames is enough for style, layout and paint to have run; this
+      // timeout is only a floor on that, not a guess at how long it takes.
+      stopId = window.setTimeout(() => setPrewarming(false), 500)
+    }, 520)
+    return () => {
+      window.clearTimeout(startId)
+      if (stopId !== undefined) window.clearTimeout(stopId)
+    }
   }, [setupComplete])
 
   // null means get_config hasn't answered yet. Rendering the app here and
@@ -123,7 +142,7 @@ function App() {
           <SettingsScreen />
         </div>
         <div
-          className="bb-app__screen"
+          className="bb-app__screen bb-app__screen--wide"
           data-active={screen === 'logs'}
           aria-hidden={(prewarming && screen !== 'logs') || undefined}
         >

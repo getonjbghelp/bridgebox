@@ -64,3 +64,12 @@ export async function callBridge<T>(method: string, ...args: unknown[]): Promise
   }
   return window.pywebview!.api![method](...args) as Promise<T>
 }
+
+// A callBridge() promise rejecting (bridge unreachable, method not
+// implemented) is not something the non-technical, Russian-primary audience
+// this app is built for should ever see verbatim - screens show
+// strings.common.unexpectedError instead and call this so the real cause
+// isn't lost, just moved to devtools where it belongs.
+export function logBridgeError(err: unknown): void {
+  console.error('[bridge]', err)
+}

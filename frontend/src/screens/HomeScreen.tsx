@@ -10,7 +10,7 @@ import { DiagBadge, type DiagState } from '../components/DiagBadge'
 import { IconCheck, IconCopy } from '../components/icons'
 import { useSpringTransition } from '../lib/motion'
 import { useStrings, t } from '../lib/strings'
-import { callBridge, isNativeBridgeAvailable, waitForBridgeReady } from '../lib/bridge'
+import { callBridge, isNativeBridgeAvailable, logBridgeError, waitForBridgeReady } from '../lib/bridge'
 import './HomeScreen.css'
 
 // Used only as a fallback when previewing in a plain browser (no pywebview
@@ -88,7 +88,8 @@ export function HomeScreen() {
         const result = await callBridge<BridgeStatus>('bridge_status')
         if (!cancelled) setStatus(result)
       } catch (err) {
-        if (!cancelled) setBridgeError(String(err))
+        logBridgeError(err)
+        if (!cancelled) setBridgeError(strings.common.unexpectedError)
       }
     }
 
@@ -107,7 +108,10 @@ export function HomeScreen() {
       cancelled = true
       if (id !== undefined) window.clearInterval(id)
     }
-  }, [])
+    // Only re-subscribes on an actual language switch (the string value
+    // changes reference only then) - not on every render, since it's a
+    // primitive, not the whole strings object.
+  }, [strings.common.unexpectedError])
 
   // Dismissed locally rather than through the bridge: the backend clears it on
   // the next start(), and a second round trip to acknowledge a message would
@@ -162,7 +166,8 @@ export function HomeScreen() {
       else if (result.zapretError)
         setBridgeError(t(strings.home.zapretErrorPrefix, { error: result.zapretError }))
     } catch (err) {
-      setBridgeError(String(err))
+      logBridgeError(err)
+      setBridgeError(strings.common.unexpectedError)
     } finally {
       setBusy(false)
     }
@@ -182,8 +187,9 @@ export function HomeScreen() {
       setConnectionTest(result.ok ? 'done' : 'error')
       setConnectionError(result.ok ? null : result.error)
     } catch (err) {
+      logBridgeError(err)
       setConnectionTest('error')
-      setConnectionError(String(err))
+      setConnectionError(strings.common.unexpectedError)
     }
   }
 
@@ -212,7 +218,8 @@ export function HomeScreen() {
         setUpdateStarting(false)
       }
     } catch (err) {
-      setUpdateError(String(err))
+      logBridgeError(err)
+      setUpdateError(strings.common.unexpectedError)
       setUpdateStarting(false)
     }
   }

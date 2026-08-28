@@ -7,7 +7,7 @@ import { useStrings, t } from '../lib/strings'
 import { renderChangelogBody } from '../lib/richText'
 import { pickReleaseNotes } from '../lib/releaseNotes'
 import { useMotionPrefs } from '../state/MotionPrefsContext'
-import { callBridge, isNativeBridgeAvailable, waitForBridgeReady } from '../lib/bridge'
+import { callBridge, isNativeBridgeAvailable, logBridgeError, waitForBridgeReady } from '../lib/bridge'
 import { clearPoll } from '../lib/poll'
 import './AppUpdateBanner.css'
 
@@ -157,9 +157,10 @@ export function AppUpdateBanner() {
           setApplyError(progress.error)
         }
       } catch (err) {
+        logBridgeError(err)
         stopApplyPolling()
         setApplyState('error')
-        setApplyError(String(err))
+        setApplyError(strings.common.unexpectedError)
       }
     }, APPLY_POLL_MS)
   }

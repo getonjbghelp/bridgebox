@@ -1,3 +1,27 @@
+/* The 5-way section switcher above every tab's content. Stretched to the
+   full width of the settings box rather than left-aligned at its own
+   content width (Segmented's default, shared with smaller pickers
+   elsewhere - see Segmented.css) - five equal-width buttons spanning the
+   same edge-to-edge line the sections below it already do, instead of a
+   pill floating in the top-left corner of a wide panel. Wraps rather than
+   scrolling at narrow widths - Segmented's items are single short words in
+   both languages, so two rows still reads cleanly. */
+.bb-settings-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  margin-bottom: var(--space-5);
+}
+
+.bb-settings-tabs .bb-segmented {
+  display: flex;
+  width: 100%;
+}
+
+.bb-settings-tabs .bb-segmented__item {
+  flex: 1;
+  text-align: center;
+}
+
 .bb-select,
 .bb-input,
 .bb-textarea {
@@ -159,18 +183,6 @@
   text-transform: uppercase;
 }
 
-/* One block per target-set table in a "both" run. The heading above each
-   table (rendered only when more than one table is on screen - see
-   SettingsScreen.tsx) needs room above it to read as its own section rather
-   than a continuation of the previous table. */
-.bb-strategy-stage + .bb-strategy-stage {
-  margin-top: var(--space-5);
-}
-.bb-strategy-stage .text-subtitle {
-  display: block;
-  margin-bottom: var(--space-2);
-}
-
 /* Apply-fastest and the two export buttons share one row - they used to be
    stacked (apply above, export below), which read as export belonging to a
    different step instead of the same "you're done, now what" moment. */
@@ -201,6 +213,35 @@
   border-top: 1px solid var(--color-border);
 }
 
+/* <details> version of the same heading, used for the block the critique
+   flagged as unconditionally-visible advanced/jargon content (rewrite keys,
+   origin, user-agent overrides). Collapsed by default; the disclosure
+   triangle is the browser's own, same minimal-affordance choice as the Logs
+   screen's frame trace. */
+.bb-subheading--collapsible {
+  padding-top: var(--space-4);
+  margin-top: var(--space-2);
+  border-top: 1px solid var(--color-border);
+}
+
+.bb-subheading__summary {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.bb-subheading__summary:hover .text-subtitle {
+  color: var(--color-text-primary);
+}
+
+.bb-subheading__content {
+  display: flex;
+  flex-direction: column;
+  margin-top: var(--space-3);
+}
+
 /* What an update did to zapret/strategies/. Sits under the replaced-file list
    in the "done" modal, separated by a rule rather than a card - it is a
    continuation of that list, not a second thing. */
@@ -217,6 +258,21 @@
    was kept and the new adaptation went beside it. */
 .bb-strategy-changes__forked {
   color: var(--color-warning);
+}
+
+/* Shown right under the picker when the currently selected strategy uses an
+   unfooled desync mode (syndata) - see strategies.py's _is_aggressive. Same
+   warning language as .bb-settings__dirty below, so "something needs your
+   attention" reads consistently across this screen. */
+.bb-strategy-warning {
+  margin-top: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-warning);
+  border-radius: var(--radius-md);
+  background: var(--color-warning-soft);
+  color: var(--color-text-primary);
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 /* "Настройки изменены" — the bottom banner.

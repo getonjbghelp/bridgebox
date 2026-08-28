@@ -148,7 +148,7 @@ TAINTED_ATTRS = {"path_qs", "query_string"}
 # Files whose logging is audited. The whole server package plus desktop.py,
 # which is the other place that formats upstream URLs.
 _AUDITED = ["server/rooms.py", "server/relay.py", "server/blobcast.py", "server/app.py",
-            "server/factory.py", "desktop.py"]
+            "server/factory.py", "desktop.py", "api/diagnostics.py"]
 
 
 def _log_calls(tree: ast.AST):
@@ -231,7 +231,7 @@ def test_the_token_query_scheme_is_still_what_the_code_sends():
     """If _close_test_room ever stops using a query parameter, the regex above
     is guarding a shape nothing produces - and the real one goes unguarded.
     Pinned by reading the source rather than by running a live request."""
-    source = (SERVER_DIR / "desktop.py").read_text(encoding="utf-8")
+    source = (SERVER_DIR / "api" / "diagnostics.py").read_text(encoding="utf-8")
 
     assert re.search(r'params\s*=\s*\{"token":', source), (
         "the room token is no longer sent as a query parameter - check that "

@@ -118,5 +118,13 @@
     "project_url": "https://github.com/InvoxiPlayGames/johnbox",
     "license": "AGPL-3.0",
     "purpose": "Reference only, no code bundled or derived - a community Ecast API v2 server whose room-creation response independently confirmed the real host/code/token shape (vs. the project's own unverified research docs) and that the game's WebSocket handshake isn't tied to a fixed path"
+  },
+  {
+    "name": "tg-ws-proxy",
+    "author": "Flowseal",
+    "author_url": "https://github.com/Flowseal",
+    "project_url": "https://github.com/Flowseal/tg-ws-proxy",
+    "license": "MIT",
+    "purpose": "Reference only, no code bundled or derived - its WS connection pool warmup (proxy/pool.py) inspired pre-warming the Ecast upstream connection in runtime_core.py, so room creation doesn't pay a cold TCP+TLS handshake on top of zapret's own overhead"
   }
 ]

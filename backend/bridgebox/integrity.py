@@ -55,13 +55,17 @@ _ZAPRET_GLOBS = (
 #
 # A portable build's own code and UI are not loose files any more -
 # launcher.py, backend/bridgebox/**/*.py and frontend/dist/**/* are all
-# baked into one bridgebox.exe (see tools/build_portable.py) - so a manifest
-# built from the source-checkout globs against that tree would watch nothing
-# real and "verify" a folder it never actually looked at. Watching the exe
-# itself instead covers the same ground as one file, and covers it more
-# strictly: it can't be tampered with one loose .py at a time.
+# baked into bridgebox.exe + _internal/ (see tools/build_portable.py) - so a
+# manifest built from the source-checkout globs against that tree would watch
+# nothing real and "verify" a folder it never actually looked at. Watching the
+# onedir output instead covers the same ground, and covers it more strictly:
+# it can't be tampered with one loose .py at a time. _internal/ is where
+# PyInstaller's onedir mode puts everything except the exe stub itself - the
+# Python runtime, every compiled extension, the bundled frontend/dist - so
+# leaving it unwatched would mean the actual code and UI sit unprotected next
+# to a baseline that only ever checked the thin launcher exe.
 WATCHED_GLOBS = (
-    ("bridgebox.exe",) + _ZAPRET_GLOBS
+    ("bridgebox.exe", "_internal/**/*") + _ZAPRET_GLOBS
     if getattr(sys, "frozen", False)
     else ("launcher.py", "run.bat") + _ZAPRET_GLOBS + (
         "backend/bridgebox/**/*.py",
@@ -80,7 +84,11 @@ WATCHED_GLOBS = (
 IGNORED_PARTS = frozenset({"__pycache__", ".venv", "node_modules", ".git"})
 
 def _is_ignored(relative: Path) -> bool:
-    return any(part in IGNORED_PARTS for part in relative.parts)
+    if any(part in IGNORED_PARTS for part in relative.parts):
+        return True
+    # PyInstaller's launcher can create this diagnostic log before BridgeBox
+    # has configured normal logging. It is runtime state, not shipped code.
+    return relative.parts[:2] in {("_internal", "log"), ("_internal", "logs")}
 
 
 def _digest(path: Path) -> str:

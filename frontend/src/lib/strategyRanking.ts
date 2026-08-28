@@ -3,8 +3,10 @@
 //
 // Its own module rather than a helper inside SetupWizard.tsx so it can be
 // imported by `node --test`, which cannot load a .tsx that pulls in React and
-// a stylesheet. Settings deliberately does NOT use this - there the two
-// protocols' tables side by side are the point.
+// a stylesheet. Settings also merges to one row per strategy now, but via its
+// own mergeStagePasses (SettingsScreen.tsx) rather than this: its table shows
+// every target's own result, where this collapses straight to a single
+// ok/ms verdict, which is all the wizard's ranking needs.
 
 export type TargetSet = 'ecast' | 'blobcast'
 

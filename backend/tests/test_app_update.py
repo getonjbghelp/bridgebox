@@ -131,34 +131,39 @@ async def test_fetch_latest_release_refuses_an_unexpected_html_url_host():
         await app_update.fetch_latest_release(session)
 
 
-# ---- exe asset discovery ---------------------------------------------------
+# ---- update asset discovery -------------------------------------------------
 
 
-async def test_fetch_latest_release_finds_the_exe_asset():
+async def test_fetch_latest_release_finds_the_portable_zip_asset():
     session = _FakeSession(
         _release_payload(
             assets=[
                 {"name": "source.zip", "browser_download_url": "https://github.com/x/source.zip",
                  "size": 10},
-                {"name": "BridgeBox.exe",
-                 "browser_download_url": "https://objects.githubusercontent.com/BridgeBox.exe",
-                 "size": 42_000_000},
+                {"name": "BridgeBox_Portable-v0.1.4.zip",
+                 "browser_download_url":
+                     "https://objects.githubusercontent.com/BridgeBox_Portable-v0.1.4.zip",
+                 "size": 60_000_000},
             ]
         )
     )
 
     release = await app_update.fetch_latest_release(session)
 
-    assert release.asset_url == "https://objects.githubusercontent.com/BridgeBox.exe"
-    assert release.asset_size == 42_000_000
+    assert release.asset_url == (
+        "https://objects.githubusercontent.com/BridgeBox_Portable-v0.1.4.zip"
+    )
+    assert release.asset_size == 60_000_000
+    assert release.asset_is_archive is True
 
 
-async def test_fetch_latest_release_captures_the_exe_digest_when_present():
+async def test_fetch_latest_release_captures_the_zip_digest_when_present():
     session = _FakeSession(
         _release_payload(
             assets=[
-                {"name": "BridgeBox.exe",
-                 "browser_download_url": "https://objects.githubusercontent.com/BridgeBox.exe",
+                {"name": "BridgeBox_Portable.zip",
+                 "browser_download_url":
+                     "https://objects.githubusercontent.com/BridgeBox_Portable.zip",
                  "digest": "sha256:" + "a" * 64},
             ]
         )
@@ -169,7 +174,27 @@ async def test_fetch_latest_release_captures_the_exe_digest_when_present():
     assert release.asset_digest == "sha256:" + "a" * 64
 
 
-async def test_fetch_latest_release_exe_digest_is_none_on_an_asset_uploaded_before_it_existed():
+async def test_fetch_latest_release_zip_digest_is_none_on_an_asset_uploaded_before_it_existed():
+    session = _FakeSession(
+        _release_payload(
+            assets=[
+                {"name": "BridgeBox_Portable.zip",
+                 "browser_download_url":
+                     "https://objects.githubusercontent.com/BridgeBox_Portable.zip"},
+            ]
+        )
+    )
+
+    release = await app_update.fetch_latest_release(session)
+
+    assert release.asset_digest is None
+
+
+async def test_fetch_latest_release_ignores_a_bare_exe_asset_entirely():
+    """A onedir install is not runnable from bridgebox.exe alone any more -
+    it needs the matching _internal/ folder, which only the portable .zip
+    carries (see extract_release_from_archive) - so a bare .exe asset must
+    never be picked, whether or not a release also happens to carry one."""
     session = _FakeSession(
         _release_payload(
             assets=[
@@ -181,34 +206,11 @@ async def test_fetch_latest_release_exe_digest_is_none_on_an_asset_uploaded_befo
 
     release = await app_update.fetch_latest_release(session)
 
-    assert release.asset_digest is None
+    assert release.asset_url is None
+    assert release.asset_is_archive is False
 
 
-async def test_fetch_latest_release_falls_back_to_the_portable_zip():
-    """Releases ship the portable .zip, not a bare .exe - the exe alone is
-    not a runnable BridgeBox (it needs zapret/ beside it), so a release
-    with no .exe asset is the normal case, not a broken one."""
-    session = _FakeSession(
-        _release_payload(
-            assets=[
-                {"name": "BridgeBox_Portable-v0.1.4.zip",
-                 "browser_download_url":
-                     "https://objects.githubusercontent.com/BridgeBox_Portable-v0.1.4.zip",
-                 "size": 60_000_000,
-                 "digest": "sha256:" + "b" * 64},
-            ]
-        )
-    )
-
-    release = await app_update.fetch_latest_release(session)
-
-    assert release.asset_url.endswith("BridgeBox_Portable-v0.1.4.zip")
-    assert release.asset_is_archive is True
-    assert release.asset_digest == "sha256:" + "b" * 64
-
-
-async def test_fetch_latest_release_prefers_a_bare_exe_over_the_zip():
-    """A .exe needs no unpacking, so it wins when a release carries both."""
+async def test_fetch_latest_release_picks_the_zip_even_when_a_bare_exe_is_also_offered():
     session = _FakeSession(
         _release_payload(
             assets=[
@@ -224,8 +226,8 @@ async def test_fetch_latest_release_prefers_a_bare_exe_over_the_zip():
 
     release = await app_update.fetch_latest_release(session)
 
-    assert release.asset_url.endswith("BridgeBox.exe")
-    assert release.asset_is_archive is False
+    assert release.asset_url.endswith("BridgeBox_Portable.zip")
+    assert release.asset_is_archive is True
 
 
 async def test_fetch_latest_release_picks_the_portable_zip_among_several():
@@ -259,12 +261,12 @@ async def test_fetch_latest_release_has_no_asset_url_when_nothing_is_downloadabl
     assert release.asset_is_archive is False
 
 
-async def test_fetch_latest_release_refuses_an_exe_asset_on_an_unexpected_host():
+async def test_fetch_latest_release_refuses_a_zip_asset_on_an_unexpected_host():
     session = _FakeSession(
         _release_payload(
             assets=[
-                {"name": "BridgeBox.exe",
-                 "browser_download_url": "https://evil.example.com/BridgeBox.exe"},
+                {"name": "BridgeBox_Portable.zip",
+                 "browser_download_url": "https://evil.example.com/BridgeBox_Portable.zip"},
             ]
         )
     )
@@ -518,6 +520,71 @@ def test_replace_running_exe_gives_up_after_the_retry_budget_on_a_persistent_loc
     assert current.read_bytes() == b"old", "must still be launchable after giving up"
 
 
+# ---- replace_running_internal -----------------------------------------------
+
+
+def _write_dir(path: Path, files: dict[str, bytes]) -> Path:
+    for name, data in files.items():
+        target = path / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
+    return path
+
+
+def test_replace_running_internal_swaps_the_folder_and_returns_the_backup_path(
+    tmp_path: Path,
+):
+    current = _write_dir(tmp_path / "_internal", {"base_library.zip": b"old"})
+    new = _write_dir(tmp_path / "_internal.new", {"base_library.zip": b"new"})
+
+    backup = app_update.replace_running_internal(new, current)
+
+    assert (current / "base_library.zip").read_bytes() == b"new"
+    assert backup == tmp_path / "_internal.old"
+    assert (backup / "base_library.zip").read_bytes() == b"old"
+    assert not new.exists()
+
+
+def test_replace_running_internal_returns_none_when_there_was_nothing_to_back_up(
+    tmp_path: Path,
+):
+    """An old onefile install has no _internal/ at all - the very first
+    onedir update just moves the staged folder into place, nothing to back
+    up or roll back to."""
+    new = _write_dir(tmp_path / "_internal.new", {"base_library.zip": b"new"})
+    current = tmp_path / "_internal"
+    assert not current.exists()
+
+    backup = app_update.replace_running_internal(new, current)
+
+    assert backup is None
+    assert (current / "base_library.zip").read_bytes() == b"new"
+    assert not new.exists()
+
+
+def test_replace_running_internal_rolls_back_if_the_final_move_fails(
+    tmp_path: Path, monkeypatch
+):
+    current = _write_dir(tmp_path / "_internal", {"base_library.zip": b"old"})
+    new = _write_dir(tmp_path / "_internal.new", {"base_library.zip": b"new"})
+
+    real_replace = app_update.os.replace
+
+    def flaky_replace(src, dst):
+        if str(src) == str(new):
+            raise OSError("simulated failure moving the new _internal into place")
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(app_update.os, "replace", flaky_replace)
+
+    with pytest.raises(OSError):
+        app_update.replace_running_internal(new, current)
+
+    assert (current / "base_library.zip").read_bytes() == b"old", (
+        "must still be launchable after a failed swap"
+    )
+
+
 def test_cleanup_stale_files_removes_both_a_leftover_backup_and_stage_file(tmp_path: Path):
     current = tmp_path / "BridgeBox.exe"
     current.write_bytes(b"current")
@@ -528,6 +595,24 @@ def test_cleanup_stale_files_removes_both_a_leftover_backup_and_stage_file(tmp_p
 
     assert not (tmp_path / "BridgeBox.exe.old").exists()
     assert not (tmp_path / "BridgeBox.exe.new").exists()
+
+
+def test_cleanup_stale_files_also_removes_a_leftover_internal_backup_and_stage_dir(
+    tmp_path: Path,
+):
+    """The _internal/ sibling gets the same treatment as the exe - both
+    halves of a onedir install can leave a stray .old/.new behind."""
+    current = tmp_path / "BridgeBox.exe"
+    current.write_bytes(b"current")
+    (tmp_path / "_internal.old" / "base_library.zip").parent.mkdir()
+    (tmp_path / "_internal.old" / "base_library.zip").write_bytes(b"stale-backup")
+    (tmp_path / "_internal.new" / "base_library.zip").parent.mkdir()
+    (tmp_path / "_internal.new" / "base_library.zip").write_bytes(b"stale-stage")
+
+    app_update.cleanup_stale_files(current)
+
+    assert not (tmp_path / "_internal.old").exists()
+    assert not (tmp_path / "_internal.new").exists()
 
 
 def test_cleanup_stale_files_is_a_silent_noop_when_nothing_is_there(tmp_path: Path):
@@ -598,11 +683,34 @@ def test_running_exe_path_is_sys_executable_when_frozen(monkeypatch):
     assert app_update.running_exe_path() == Path(r"C:\Portable\BridgeBox.exe")
 
 
+def test_running_internal_dir_is_none_unless_frozen(monkeypatch):
+    monkeypatch.delattr(app_update.sys, "frozen", raising=False)
+    assert app_update.running_internal_dir() is None
+
+
+def test_running_internal_dir_sits_beside_the_running_exe_when_frozen(monkeypatch):
+    monkeypatch.setattr(app_update.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(app_update.sys, "executable", r"C:\Portable\BridgeBox.exe", raising=False)
+    assert app_update.running_internal_dir() == Path(r"C:\Portable\_internal")
+
+
+def test_running_internal_dir_is_returned_even_when_it_does_not_exist_yet(
+    monkeypatch, tmp_path: Path
+):
+    """The one real case this covers: an old onefile install (no _internal/
+    at all) updating straight to the first onedir release - the path is
+    still a valid swap target, just one with nothing at it yet."""
+    monkeypatch.setattr(app_update.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(app_update.sys, "executable", str(tmp_path / "BridgeBox.exe"), raising=False)
+    assert not (tmp_path / "_internal").exists()
+    assert app_update.running_internal_dir() == tmp_path / "_internal"
+
+
 def test_stage_path_for_appends_the_new_suffix():
     assert app_update.stage_path_for(Path("BridgeBox.exe")) == Path("BridgeBox.exe.new")
 
 
-# ---- extract_exe_from_archive ----------------------------------------------
+# ---- extract_release_from_archive -------------------------------------------
 
 
 def _portable_zip(path: Path, *, members: dict[str, bytes]) -> Path:
@@ -614,60 +722,108 @@ def _portable_zip(path: Path, *, members: dict[str, bytes]) -> Path:
     return path
 
 
-def test_extract_exe_finds_the_exe_nested_under_the_release_folder(tmp_path: Path):
+def _portable_release_members(**extra: bytes) -> dict[str, bytes]:
+    """A minimal but realistic portable release archive's contents - the
+    root folder name carries the version, same as a real one - plus
+    whatever extra members a test wants layered on top."""
+    return {
+        "BridgeBox_Portable-v0.1.4/README.md": b"# readme",
+        "BridgeBox_Portable-v0.1.4/bridgebox.exe": b"MZ-exe-payload",
+        "BridgeBox_Portable-v0.1.4/_internal/base_library.zip": b"internal-payload",
+        "BridgeBox_Portable-v0.1.4/zapret/winws.exe": b"not-touched-by-self-update",
+        "BridgeBox_Portable-v0.1.4/config.yaml": b"not-touched-either",
+        **{f"BridgeBox_Portable-v0.1.4/{name}": data for name, data in extra.items()},
+    }
+
+
+def test_extract_release_pulls_the_exe_and_internal_folder_nested_under_the_release_folder(
+    tmp_path: Path,
+):
     """The release archive nests everything one level down, and that folder
     name carries the version - so the exe is found by name at any depth,
-    never by a hard-coded path."""
+    never by a hard-coded path, and _internal/'s members are found relative
+    to wherever the exe turned out to be."""
     archive = _portable_zip(
         tmp_path / "BridgeBox_Portable-v0.1.4.zip",
-        members={
-            "BridgeBox_Portable-v0.1.4/README.md": b"# readme",
-            "BridgeBox_Portable-v0.1.4/bridgebox.exe": b"MZ-real-payload",
-            "BridgeBox_Portable-v0.1.4/zapret/winws.exe": b"not-the-app",
-        },
+        members=_portable_release_members(**{"_internal/sub/extra.pyd": b"nested-payload"}),
     )
-    dest = tmp_path / "staged.exe"
+    exe_dest = tmp_path / "staged.exe"
+    internal_dest = tmp_path / "staged_internal"
 
-    result = app_update.extract_exe_from_archive(archive, dest)
+    result = app_update.extract_release_from_archive(archive, exe_dest, internal_dest)
 
-    assert result == dest
-    assert dest.read_bytes() == b"MZ-real-payload"
+    assert result == exe_dest
+    assert exe_dest.read_bytes() == b"MZ-exe-payload"
+    assert (internal_dest / "base_library.zip").read_bytes() == b"internal-payload"
+    assert (internal_dest / "sub" / "extra.pyd").read_bytes() == b"nested-payload"
+    # zapret/ and config.yaml are the release's own, never self-update's to touch.
+    assert not (internal_dest / "zapret").exists()
+    assert not (tmp_path / "config.yaml").exists()
 
 
-def test_extract_exe_raises_when_the_archive_holds_no_bridgebox_exe(tmp_path: Path):
+def test_extract_release_raises_when_the_archive_holds_no_bridgebox_exe(tmp_path: Path):
     archive = _portable_zip(
         tmp_path / "wrong.zip", members={"docs/readme.txt": b"nothing here"}
     )
 
     with pytest.raises(RuntimeError, match="no bridgebox.exe"):
-        app_update.extract_exe_from_archive(archive, tmp_path / "staged.exe")
+        app_update.extract_release_from_archive(
+            archive, tmp_path / "staged.exe", tmp_path / "staged_internal"
+        )
 
 
-def test_extract_exe_ignores_a_traversal_path_in_the_archive(tmp_path: Path):
-    """A hostile entry name must not steer where anything lands: exactly one
-    member is read, and it goes to the path this function was handed."""
+def test_extract_release_raises_when_the_archive_has_no_internal_folder(tmp_path: Path):
+    """A bare .exe-only archive is not a onedir portable release - refused
+    rather than silently accepted and left half-extracted."""
+    archive = _portable_zip(
+        tmp_path / "exe-only.zip",
+        members={"BridgeBox_Portable-v0.1.4/bridgebox.exe": b"MZ-exe-payload"},
+    )
+
+    with pytest.raises(RuntimeError, match="_internal"):
+        app_update.extract_release_from_archive(
+            archive, tmp_path / "staged.exe", tmp_path / "staged_internal"
+        )
+
+
+def test_extract_release_ignores_a_traversal_path_in_the_archive(tmp_path: Path):
+    """A hostile entry name must not steer where anything lands: every
+    member goes to a path computed from its OWN name relative to the exe's,
+    never the archive's own stored (possibly ../../-laden) one."""
     archive = _portable_zip(
         tmp_path / "evil.zip",
-        members={"../../../../bridgebox.exe": b"payload"},
+        members={
+            "../../../../bridgebox.exe": b"payload",
+            "../../../../_internal/base_library.zip": b"internal-payload",
+        },
     )
-    dest = tmp_path / "staged" / "staged.exe"
+    exe_dest = tmp_path / "staged" / "staged.exe"
+    internal_dest = tmp_path / "staged" / "staged_internal"
 
-    app_update.extract_exe_from_archive(archive, dest)
+    app_update.extract_release_from_archive(archive, exe_dest, internal_dest)
 
-    assert dest.read_bytes() == b"payload"
-    # Nothing was written outside the directory we named.
+    assert exe_dest.read_bytes() == b"payload"
+    assert (internal_dest / "base_library.zip").read_bytes() == b"internal-payload"
+    # Nothing was written outside the directories we named.
     assert not (tmp_path.parent / "bridgebox.exe").exists()
 
 
-def test_extract_exe_refuses_a_zip_bomb(tmp_path: Path):
-    """The cap is measured on the decompressed stream, not on the entry's
-    own declared size - a lying header must not buy unbounded disk."""
+def test_extract_release_refuses_a_zip_bomb(tmp_path: Path):
+    """The cap is measured on the decompressed stream, not on any entry's
+    own declared size - a lying header must not buy unbounded disk. Applies
+    across the whole extraction (exe + _internal/ together), and a refusal
+    cleans up whatever had already been written."""
     archive = _portable_zip(
-        tmp_path / "bomb.zip", members={"bridgebox.exe": b"\0" * 5_000_000}
+        tmp_path / "bomb.zip",
+        members=_portable_release_members(**{"_internal/huge.bin": b"\0" * 5_000_000}),
     )
-    dest = tmp_path / "staged.exe"
+    exe_dest = tmp_path / "staged.exe"
+    internal_dest = tmp_path / "staged_internal"
 
     with pytest.raises(ValueError, match="exceeds"):
-        app_update.extract_exe_from_archive(archive, dest, max_bytes=1_000_000)
+        app_update.extract_release_from_archive(
+            archive, exe_dest, internal_dest, max_bytes=1_000_000
+        )
 
-    assert not dest.exists()
+    assert not exe_dest.exists()
+    assert not internal_dest.exists()

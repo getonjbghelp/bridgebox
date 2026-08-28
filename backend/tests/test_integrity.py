@@ -149,6 +149,25 @@ def test_an_edit_outside_the_watched_set_is_invisible(tmp_path: Path):
     assert report.verified is True
 
 
+def test_a_runtime_stderr_log_inside_the_frozen_bundle_is_not_tampering(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """PyInstaller creates this diagnostic file on a clean portable launch."""
+    root = _tree(tmp_path)
+    monkeypatch.setattr(
+        integrity,
+        "WATCHED_GLOBS",
+        ("bridgebox.exe", "_internal/**/*") + integrity._ZAPRET_GLOBS,
+    )
+    integrity.write_manifest(root)
+
+    stderr_log = root / "_internal" / "log" / "launcher-stderr.log"
+    stderr_log.parent.mkdir(parents=True)
+    stderr_log.write_text("startup diagnostic\n", encoding="utf-8")
+
+    assert integrity.verify(root).verified is True
+
+
 def test_ensure_baseline_writes_one_on_first_run_and_reports_fine(tmp_path: Path):
     root = _tree(tmp_path)
 

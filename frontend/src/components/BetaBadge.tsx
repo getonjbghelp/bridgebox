@@ -23,7 +23,7 @@ interface AppInfo {
  *  «История версий» button inside it was unreachable - you had to cross the
  *  gap between chip and panel, and the panel was gone before you arrived.
  *  Cancelled if the cursor lands on the panel itself. */
-const CLOSE_DELAY_MS = 260
+const CLOSE_DELAY_MS = 100
 
 /**
  * The β mark beside the wordmark, its explanation, and the version history

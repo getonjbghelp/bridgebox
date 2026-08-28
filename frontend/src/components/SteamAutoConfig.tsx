@@ -3,7 +3,7 @@ import { Modal } from './Modal'
 import { Button } from './Button'
 import { Toggle } from './Toggle'
 import { Spinner } from './Spinner'
-import { callBridge } from '../lib/bridge'
+import { callBridge, logBridgeError } from '../lib/bridge'
 import { useStrings } from '../lib/strings'
 import './SteamAutoConfig.css'
 
@@ -50,12 +50,13 @@ export function SteamAutoConfig() {
   const [step, setStep] = useState<Step>({ kind: 'idle' })
 
   function failed(mode: 'apply' | 'revert', err: unknown) {
+    logBridgeError(err)
     setStep({
       kind: 'done',
       mode,
       result: {
         ok: false,
-        error: err instanceof Error ? err.message : String(err),
+        error: strings.common.unexpectedError,
         results: {},
         steamRelaunched: false,
       },

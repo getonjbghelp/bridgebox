@@ -57,6 +57,34 @@ def test_discover_strategies_ignores_non_bat_files(tmp_path: Path):
     assert len(strategies) == len(REAL_LAYOUT)
 
 
+def test_discover_strategies_flags_syndata_as_aggressive(tmp_path: Path):
+    strategies_dir = tmp_path / "strategies"
+    strategies_dir.mkdir(parents=True)
+    (strategies_dir / "Alternative 5.bat").write_text(
+        "@echo off\nwinws.exe --dpi-desync=syndata,multidisorder\n"
+    )
+
+    strategies = discover_strategies(strategies_dir)
+
+    assert strategies["alternative-5"].aggressive is True
+
+
+def test_discover_strategies_a_fooled_desync_is_not_aggressive(tmp_path: Path):
+    """fake/multisplit/multidisorder forge a throwaway packet that
+    --dpi-desync-fooling makes the real server discard - only syndata writes
+    into the real SYN with nothing to fool it. Confirmed against a real
+    regression (Alternative 5) that this one specifically was safe."""
+    strategies_dir = tmp_path / "strategies"
+    strategies_dir.mkdir(parents=True)
+    (strategies_dir / "Fake TLS Auto.bat").write_text(
+        "@echo off\nwinws.exe --dpi-desync=fake,multidisorder --dpi-desync-fooling=badseq\n"
+    )
+
+    strategies = discover_strategies(strategies_dir)
+
+    assert strategies["fake-tls-auto"].aggressive is False
+
+
 def test_group_general_is_primary(tmp_path: Path):
     strategies_dir = tmp_path / "strategies"
     _make_bats(strategies_dir, REAL_LAYOUT)

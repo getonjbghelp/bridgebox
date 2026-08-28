@@ -4,7 +4,7 @@
 
 <img src=".github/readme/logo.svg" alt="BridgeBox" width="360" />
 
-*Made with Claude Sonnet 5 / Opus 5*
+*Made with Claude Sonnet 5 / Opus 5 / GPT-5.6 Sol*
 
 [![Release](https://img.shields.io/github/v/release/getonjbghelp/bridgebox?label=release&color=1d4ed8)](https://github.com/getonjbghelp/bridgebox/releases/latest)
 [![License](https://img.shields.io/badge/license-PolyForm%20NonCommercial%201.0.0-1d4ed8)](LICENSE.md)
@@ -203,7 +203,10 @@ connection test button, and the connection guide.
 
 ### Settings
 
-Four sections, covered [below](#all-settings).
+Five sections, ordered by how often they get touched - **Network** and
+**Profiles** lead (what people actually open Settings for when the game
+won't connect), then **General**, **Updates**, and **System**. Covered
+[below](#all-settings).
 
 ### Info
 
@@ -231,7 +234,7 @@ screen is open.
 - The feed auto-scrolls to new entries. Scroll up to read something and auto-scroll
   pauses, with a **"↓ New entries"** button to jump back down.
 
-Logs are also written to `logs/bridgebox.log`, rotating at 5 MB.
+Logs are also written to `logs/bridgebox.log`, rotating at 20 MB.
 
 ---
 
@@ -298,9 +301,11 @@ This only updates the bypass engine. Updating BridgeBox itself is the next secti
 Separate from Zapret - the program checks [its own releases on
 GitHub](https://github.com/getonjbghelp/bridgebox/releases/latest), shows what changed,
 and, in a built version (not running from source), can update itself without a trip to
-the browser: it downloads the `.exe`, verifies its checksum against the one GitHub
-itself computed when the release was published, and swaps the running file in. A
-critical security update shows a dedicated red banner that doesn't go away for good
+the browser: it downloads the release archive, verifies its checksum against the one
+GitHub itself computed when the release was published, and swaps the running
+`bridgebox.exe` and `_internal/` in together (the latter is the program's own code and
+interface - see [Building your own portable release](#building-your-own-portable-release)).
+A critical security update shows a dedicated red banner that doesn't go away for good
 until it's installed.
 
 | Setting | What it does |
@@ -308,7 +313,7 @@ until it's installed.
 | **Installed version** | BridgeBox's own version (not Zapret's). |
 | **Check on startup** | **On** by default - unlike Zapret's check, this is the same channel critical security warnings arrive through. |
 | **Check for updates** | A one-off request to GitHub. |
-| **Update BridgeBox** | Downloads, verifies the checksum, and swaps the `.exe` in. On success it offers to restart - the new version only takes effect after that. Unavailable when running from source - update with `git pull` instead. |
+| **Update BridgeBox** | Downloads, verifies the checksum, and swaps `bridgebox.exe` and `_internal/` in. On success it offers to restart - the new version only takes effect after that. Unavailable when running from source - update with `git pull` instead. |
 
 ### Connection profiles
 
@@ -536,13 +541,14 @@ python tools/build_portable.py
 ```
 
 Builds `dist/BridgeBox_Portable/` the same way the files on the Releases tab are built:
-a clean `frontend/dist`, `bridgebox.exe` through PyInstaller (no console window,
-administrator rights requested through an embedded manifest, the version baked in
-straight from `backend/pyproject.toml`), and alongside it an up-to-date `zapret/`,
-empty `certs/`/`temp/`/`logs/`, and a clean `config.yaml`. At the end the script checks
-its own output: that every required file is present, that no path from the build
-machine leaked into the exe, and that the integrity manifest (the Info screen's file
-integrity status) actually matches what's really in the folder.
+a clean `frontend/dist`, `bridgebox.exe` + `_internal/` through PyInstaller (`onedir`,
+not a single file - unpacked once at build time instead of re-unpacking on every launch;
+no console window, administrator rights requested through an embedded manifest, the
+version baked in straight from `backend/pyproject.toml`), and alongside it an up-to-date
+`zapret/`, empty `certs/`/`temp/`/`logs/`, and a clean `config.yaml`. At the end the
+script checks its own output: that every required file is present, that no path from the
+build machine leaked into the exe or `_internal/`, and that the integrity manifest (the
+Info screen's file integrity status) actually matches what's really in the folder.
 
 The `--icon path\to\file.ico` flag swaps in your own icon instead of the generated one.
 `--skip-frontend-build` skips rebuilding the interface if `frontend/dist` is already
@@ -559,7 +565,7 @@ BridgeBoxDevVersion/
   CREDITS.md                     third-party projects and their licenses
   LICENSE.md                     BridgeBox's own license
   certs/                         local certificate (created automatically)
-  logs/bridgebox.log             activity log, rotates at 5 MB
+  logs/bridgebox.log             activity log, rotates at 20 MB
   backend/                       the Python server side
     bridgebox/                   all backend code
     tests/                       automated checks

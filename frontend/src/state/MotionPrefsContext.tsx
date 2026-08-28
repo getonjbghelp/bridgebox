@@ -21,6 +21,10 @@ function detectSystemLocale(): Locale {
 interface MotionPrefs {
   animationsEnabled: boolean
   setAnimationsEnabled: (value: boolean) => void
+  /** The one duration every hook in lib/motion.ts scales its own transition
+   *  against - see UiConfig.animation_duration_ms's own docstring. */
+  animationDurationMs: number
+  setAnimationDurationMs: (value: number) => void
   theme: 'light' | 'dark'
   setTheme: (value: 'light' | 'dark') => void
   sidebarCollapsed: boolean
@@ -47,6 +51,7 @@ interface MotionPrefs {
 export interface UiSection {
   theme: 'light' | 'dark'
   animations_enabled: boolean
+  animation_duration_ms: number
   sidebar_collapsed: boolean
   setup_complete: boolean
   language: LanguagePref
@@ -61,6 +66,8 @@ const MotionPrefsContext = createContext<MotionPrefs | null>(null)
 
 export function MotionPrefsProvider({ children }: { children: ReactNode }) {
   const [animationsEnabled, setAnimationsEnabledState] = useState(true)
+  // Matches UiConfig.animation_duration_ms's own default.
+  const [animationDurationMs, setAnimationDurationMsState] = useState(220)
   // Matches UiConfig.theme's schema default (and index.html's boot-skeleton
   // fallback) so this initial value never fights the hint the skeleton
   // already painted before React took over.
@@ -97,6 +104,7 @@ export function MotionPrefsProvider({ children }: { children: ReactNode }) {
           if (result.ok && result.config) {
             setThemeState(result.config.ui.theme)
             setAnimationsEnabledState(result.config.ui.animations_enabled)
+            setAnimationDurationMsState(result.config.ui.animation_duration_ms)
             setSidebarCollapsedState(result.config.ui.sidebar_collapsed)
             setSetupCompleteState(result.config.ui.setup_complete)
             const pref = result.config.ui.language ?? 'system'
@@ -156,6 +164,13 @@ export function MotionPrefsProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  function setAnimationDurationMs(value: number) {
+    setAnimationDurationMsState(value)
+    if (isNativeBridgeAvailable()) {
+      callBridge('update_config', { ui: { animation_duration_ms: value } }).catch(() => {})
+    }
+  }
+
   function setSidebarCollapsed(value: boolean) {
     setSidebarCollapsedState(value)
     if (isNativeBridgeAvailable()) {
@@ -191,6 +206,8 @@ export function MotionPrefsProvider({ children }: { children: ReactNode }) {
       value={{
         animationsEnabled,
         setAnimationsEnabled,
+        animationDurationMs,
+        setAnimationDurationMs,
         theme,
         setTheme,
         sidebarCollapsed,

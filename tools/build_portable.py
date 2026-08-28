@@ -1,4 +1,4 @@
-"""Build a portable, single-.exe BridgeBox release.
+"""Build a portable BridgeBox release (bridgebox.exe + _internal/).
 
     python tools/build_portable.py
     python tools/build_portable.py --skip-frontend-build   # reuse frontend/dist
@@ -7,10 +7,10 @@
 
 Produces dist/BridgeBox_Portable/:
 
-    bridgebox.exe   config.yaml   README.md   LICENSE.md   CREDITS.md
+    bridgebox.exe   _internal/   config.yaml   README.md   LICENSE.md   CREDITS.md
     baseline.json   certs/   temp/   logs/   zapret/
 
-Every one of those, `bridgebox.exe` included, lives beside every other one -
+Every one of those, `bridgebox.exe` and `_internal/` included, lives beside every other one -
 no installer, no %APPDATA%, no registry key. That constraint is what decides
 most of the shape below:
 
@@ -19,9 +19,7 @@ most of the shape below:
   release folder gets copied to IS the install. See that module for the
   other half (frontend/dist has to come from somewhere ELSE - the exe
   itself - since it isn't shipped as a loose folder at all here).
-- frontend/dist and backend/pyproject.toml are bundled INSIDE the exe
-  (PyInstaller --add-data), not shipped loose, which is why the release
-  folder above has no frontend/ entry.
+- frontend/dist and backend/pyproject.toml live inside `_internal/`.
 - zapret/ ships loose and real: winws.exe is executed as a child process
   from wherever it sits on disk, and the strategy .bat/hostlist files are
   meant to stay user-editable.
@@ -58,8 +56,8 @@ RELEASE_DIR = REPO_ROOT / "dist" / "BridgeBox_Portable"
 
 APP_NAME = "bridgebox"
 PRODUCT_NAME = "BridgeBox"
-COMPANY_NAME = "BridgeBox"
-FILE_DESCRIPTION = "BridgeBox Desktop Client"
+COMPANY_NAME = "getonjbghelp"
+FILE_DESCRIPTION = "Toolkit for filtering DPI traffic to Jackbox servers"
 
 # The wordmark's own light-theme colour (tokens.css --navy-600 / --color-accent) -
 # so a generated placeholder icon still reads as unmistakably "this app",
@@ -342,7 +340,7 @@ def run_pyinstaller(icon_path: Path, version_info_path: Path, pyproject_path: Pa
         "PyInstaller",
         "--noconfirm",
         "--clean",
-        "--onefile",
+        "--onedir",
         # No console window ever, on a double-click launch (aliases:
         # --noconsole / -w). See paths.py/logging_setup.py for why the app
         # is safe to run with sys.stdout/sys.stderr as None either way.
@@ -388,10 +386,11 @@ def run_pyinstaller(icon_path: Path, version_info_path: Path, pyproject_path: Pa
     ]
     run(cmd)
 
-    exe = PYI_DIST_DIR / f"{APP_NAME}.exe"
+    app_dir = PYI_DIST_DIR / APP_NAME
+    exe = app_dir / f"{APP_NAME}.exe"
     if not exe.exists():
         raise SystemExit(f"PyInstaller reported success but {exe} does not exist")
-    return exe
+    return app_dir
 
 
 # ---- release assembly -----------------------------------------------------
@@ -418,10 +417,15 @@ def write_default_config(config_path: Path) -> None:
     run([str(VENV_PYTHON), "-c", script])
 
 
-def assemble_release(exe_path: Path) -> None:
+def assemble_release(app_dir: Path) -> None:
     log(f"Assembling release folder: {RELEASE_DIR}")
     RELEASE_DIR.mkdir(parents=True)
-    shutil.copy2(exe_path, RELEASE_DIR / f"{APP_NAME}.exe")
+    for entry in app_dir.iterdir():
+        destination = RELEASE_DIR / entry.name
+        if entry.is_dir():
+            shutil.copytree(entry, destination)
+        else:
+            shutil.copy2(entry, destination)
 
     for name in ("certs", "temp", "logs"):
         (RELEASE_DIR / name).mkdir()
@@ -441,7 +445,7 @@ def assemble_release(exe_path: Path) -> None:
 def write_integrity_baseline(release_dir: Path) -> None:
     """The trust-on-first-use gap integrity.py's own docstring names: run
     from a subprocess with sys.frozen forced True, so WATCHED_GLOBS picks
-    its frozen branch (bridgebox.exe + zapret/, not the source-tree globs a
+    its frozen branch (bridgebox.exe + _internal/ + zapret/, not the source-tree globs a
     portable release doesn't have) and the manifest this writes matches
     what the packaged app will actually check itself against at runtime."""
     script = (
@@ -457,6 +461,7 @@ def write_integrity_baseline(release_dir: Path) -> None:
 
 _REQUIRED_ENTRIES = (
     "bridgebox.exe",
+    "_internal",
     "config.yaml",
     "README.md",
     "LICENSE.md",
@@ -492,23 +497,36 @@ def validate_release() -> None:
             problems.append(f"missing {name}")
 
     exe = RELEASE_DIR / f"{APP_NAME}.exe"
-    if exe.exists():
-        size_mb = exe.stat().st_size / (1024 * 1024)
-        log(f"  {APP_NAME}.exe: {size_mb:.1f} MB")
-        if size_mb < 5:
+    internal_dir = RELEASE_DIR / "_internal"
+    if exe.exists() and internal_dir.is_dir():
+        exe_size_mb = exe.stat().st_size / (1024 * 1024)
+        internal_size_mb = sum(
+            file.stat().st_size for file in internal_dir.rglob("*") if file.is_file()
+        ) / (1024 * 1024)
+        total_mb = exe_size_mb + internal_size_mb
+        log(f"  {APP_NAME}.exe: {exe_size_mb:.1f} MB, _internal/: {internal_size_mb:.1f} MB")
+        if total_mb < 30:
             problems.append(
-                f"{APP_NAME}.exe is only {size_mb:.1f} MB - looks too small for a "
+                f"bridgebox.exe + _internal/ together are only {total_mb:.1f} MB - looks too small for a "
                 "webview+aiohttp+cryptography build, the compile may have failed silently"
             )
 
         # Best-effort only: this catches the build machine's own path
         # showing up as plain, uncompressed text (a PyInstaller warning
-        # file or a bundled resource copied verbatim) - it cannot see
-        # inside the compressed PYZ archive the actual bytecode lives in,
-        # so a clean result here is evidence, not a proof of nothing leaked.
+        # file or a bundled resource copied verbatim) in the exe stub or any
+        # loose (non-.pyc, non-DLL) file _internal/ ships - it cannot see
+        # inside a compiled .pyc or the compressed PYZ archive the real
+        # bytecode lives in, so a clean result here is evidence, not a proof
+        # of nothing leaked.
         needle = str(REPO_ROOT).encode("utf-8")
-        if needle in exe.read_bytes():
-            problems.append(f"the build machine's own path ({REPO_ROOT}) is embedded in {exe.name}")
+        leaked = [
+            file for file in (exe, *internal_dir.rglob("*"))
+            if file.is_file() and file.suffix.lower() not in (".pyc", ".dll", ".pyd")
+            and needle in file.read_bytes()
+        ]
+        if leaked:
+            names = ", ".join(str(file.relative_to(RELEASE_DIR)) for file in leaked[:5])
+            problems.append(f"the build machine's own path ({REPO_ROOT}) is embedded in: {names}")
 
     if (RELEASE_DIR / "baseline.json").exists():
         verified, detail = _integrity_check_output(RELEASE_DIR)
@@ -573,8 +591,8 @@ def run_pipeline(args: argparse.Namespace) -> None:
         company=args.company, product=args.product, description=args.description,
     )
 
-    exe_path = run_pyinstaller(icon_path, version_info_path, _pyproject_for_build())
-    assemble_release(exe_path)
+    app_dir = run_pyinstaller(icon_path, version_info_path, _pyproject_for_build())
+    assemble_release(app_dir)
     write_integrity_baseline(RELEASE_DIR)
     validate_release()
 

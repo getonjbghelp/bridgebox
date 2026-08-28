@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import time
 from typing import Awaitable, Callable, Protocol
 
 import aiohttp
@@ -153,7 +154,22 @@ async def pump(
                 )
             await sink.send_str(msg.data)
         elif msg.type in _STOP_TYPES:
-            logger.info("[%s] stop frame %s after %d frames", label, msg.type.name, frames)
+            # Which side actually hung up, and why - the two questions this
+            # session's Blobcast investigation had no direct answer for and
+            # had to reconstruct from access-log timestamps and which of the
+            # two directions' "ended" line was missing. CLOSE carries the
+            # real WS close code/reason in .data/.extra; ERROR carries the
+            # exception in .data. Neither is sensitive - a close code is a
+            # protocol detail, not a credential - so no redaction needed.
+            if msg.type == aiohttp.WSMsgType.CLOSE:
+                detail = f" code={msg.data} reason={msg.extra!r}"
+            elif msg.type == aiohttp.WSMsgType.ERROR:
+                detail = f" error={msg.data!r}"
+            else:
+                detail = ""
+            logger.info(
+                "[%s] stop frame %s%s after %d frames", label, msg.type.name, detail, frames
+            )
             break
         elif level is not None:
             # Binary/ping/pong - not forwarded by design, but worth knowing
@@ -173,6 +189,7 @@ async def relay(
 ) -> None:
     """Pump both directions concurrently between two already-open WS
     connections until either side ends, then close both."""
+    started = time.monotonic()
     task_a = asyncio.create_task(pump(ws_a, ws_b, label=label_a, level=level))
     task_b = asyncio.create_task(pump(ws_b, ws_a, label=label_b, level=level))
 
@@ -185,6 +202,17 @@ async def relay(
     for ws in (ws_a, ws_b):
         if not ws.closed:
             await ws.close()
+
+    # The one number none of the per-direction "ended"/"stop frame" lines
+    # give you on their own: how long the session actually lived. Distinct
+    # from a request's response time (rooms.py already logs that) - this is
+    # measured from the moment both sides were already connected.
+    logger.info(
+        "relay session ended after %.1fs (%s / %s)",
+        time.monotonic() - started,
+        label_a,
+        label_b,
+    )
 
 
 def resolve_room(query, room_relays: dict[str, str]) -> tuple[str | None, str | None]:

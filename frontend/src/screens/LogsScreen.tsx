@@ -2,7 +2,7 @@ import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'rea
 import { Button } from '../components/Button'
 import { useStrings, t } from '../lib/strings'
 import { useMotionPrefs } from '../state/MotionPrefsContext'
-import { callBridge, isNativeBridgeAvailable, waitForBridgeReady } from '../lib/bridge'
+import { callBridge, isNativeBridgeAvailable, logBridgeError, waitForBridgeReady } from '../lib/bridge'
 import './LogsScreen.css'
 
 type Level = 'debug' | 'info' | 'warning' | 'error'
@@ -240,7 +240,8 @@ export function LogsScreen({ active }: { active: boolean }) {
         setExportNote(t(strings.logs.exportDone, { path: result.path }))
       }
     } catch (err) {
-      setExportNote(t(strings.logs.exportFailed, { error: String(err) }))
+      logBridgeError(err)
+      setExportNote(t(strings.logs.exportFailed, { error: strings.common.unexpectedError }))
     } finally {
       setExporting(null)
     }

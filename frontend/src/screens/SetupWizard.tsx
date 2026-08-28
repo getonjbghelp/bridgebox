@@ -18,7 +18,7 @@ import { useMotionPrefs } from '../state/MotionPrefsContext'
 import { useSpringTransition, useStepTransition } from '../lib/motion'
 import { aggregateResults, type StrategyResult, type TargetSet } from '../lib/strategyRanking'
 import { useStrings, t, strategyGroupLabel } from '../lib/strings'
-import { callBridge, isNativeBridgeAvailable, waitForBridgeReady } from '../lib/bridge'
+import { callBridge, isNativeBridgeAvailable, logBridgeError, waitForBridgeReady } from '../lib/bridge'
 import './SetupWizard.css'
 
 /**
@@ -61,6 +61,7 @@ interface WizardConfig {
 interface StrategyOption {
   key: string
   name: string
+  aggressive: boolean
 }
 type StrategyGroups = Record<string, StrategyOption[]>
 
@@ -101,6 +102,9 @@ export function SetupWizard() {
   const [strategyGroups, setStrategyGroups] = useState<StrategyGroups>({})
   const [manualPicking, setManualPicking] = useState(false)
   const [manualStrategy, setManualStrategy] = useState('general')
+  const manualStrategyIsAggressive = Object.values(strategyGroups)
+    .flat()
+    .some((opt) => opt.key === manualStrategy && opt.aggressive)
   const pollRef = useRef<number | undefined>(undefined)
 
   // -- updates step --------------------------------------------------------
@@ -205,8 +209,9 @@ export function SetupWizard() {
       setCertState(result.ok ? 'done' : 'error')
       setCertError(result.ok ? null : result.error)
     } catch (err) {
+      logBridgeError(err)
       setCertState('error')
-      setCertError(String(err))
+      setCertError(strings.common.unexpectedError)
     }
   }
 
@@ -261,10 +266,11 @@ export function SetupWizard() {
           if (winner) applyStrategy(winner)
         }
       } catch (err) {
+        logBridgeError(err)
         stopPolling()
         setStrategyStage(null)
         setStrategyState('error')
-        setStrategyError(String(err))
+        setStrategyError(strings.common.unexpectedError)
       }
     }, STRATEGY_POLL_MS)
   }
@@ -502,12 +508,18 @@ export function SetupWizard() {
                           <optgroup key={group} label={strategyGroupLabel(group, strings)}>
                             {strategyGroups[group].map((opt) => (
                               <option key={opt.key} value={opt.key}>
+                                {opt.aggressive ? strings.settings.strategyAggressiveMarker : ''}
                                 {opt.name}
                               </option>
                             ))}
                           </optgroup>
                         ))}
                     </select>
+                    {manualStrategyIsAggressive && (
+                      <p className="bb-setup__strategy-warning">
+                        {strings.settings.strategyAggressiveWarning}
+                      </p>
+                    )}
                     <Button variant="primary" fullWidth onClick={confirmManualStrategy}>
                       {strings.setup.strategyManualConfirmButton}
                     </Button>
@@ -647,12 +659,24 @@ export function SetupWizard() {
                       the default is still in play when it no longer is.
                       The consequence sits above the button rather than behind
                       a confirm - a warning you have to trigger to read is one
-                      most people click past without reading. */}
+                      most people click past without reading.
+
+                      The warning paragraph itself only applies to `idle`: it
+                      says "without a test, the default stays" - true before
+                      a run, but a real regression once the test HAS run and
+                      failed (strategyState 'done'/'error'), where
+                      strategyNoneWorked above already said the same thing in
+                      the accurate tense. Showing both read as the app not
+                      tracking that a test just happened. The button survives
+                      either way, just relabelled: "skip" doesn't make sense
+                      once there's nothing left to skip. */}
                   {chosenStrategy === null && !manualPicking && (
                     <>
-                      <p className="text-caption bb-setup__skip-warning">
-                        {strings.setup.strategySkipWarning}
-                      </p>
+                      {strategyState === 'idle' && (
+                        <p className="text-caption bb-setup__skip-warning">
+                          {strings.setup.strategySkipWarning}
+                        </p>
+                      )}
                       <Button
                         variant="ghost"
                         fullWidth
@@ -661,7 +685,9 @@ export function SetupWizard() {
                           goNext()
                         }}
                       >
-                        {strings.setup.strategySkipButton}
+                        {strategyState === 'idle'
+                          ? strings.setup.strategySkipButton
+                          : strings.setup.strategyContinueDefaultButton}
                       </Button>
                     </>
                   )}
