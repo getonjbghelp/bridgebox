@@ -1,5 +1,5 @@
 import { AnimatePresence } from 'framer-motion'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type CSSProperties } from 'react'
 import { BrandLogo } from '../components/BrandLogo'
 import { Modal } from '../components/Modal'
 import { PeopleCredits } from '../components/PeopleCredits'
@@ -7,10 +7,11 @@ import { ThirdPartyLicenses } from '../components/ThirdPartyLicenses'
 import { Section, Row } from '../components/Section'
 import { LINK_ICONS } from '../components/icons'
 import { ABOUT, aboutText, localeText, type AboutLink } from '../lib/content'
-import { renderRich } from '../lib/richText'
+import { renderRich, renderChangelogBody } from '../lib/richText'
 import { useStrings, t } from '../lib/strings'
 import { useMotionPrefs } from '../state/MotionPrefsContext'
 import { callBridge, isNativeBridgeAvailable, waitForBridgeReady } from '../lib/bridge'
+import { svgAccent } from '../lib/svgAccent'
 import './InfoScreen.css'
 
 interface AppInfo {
@@ -82,9 +83,16 @@ export function InfoScreen() {
         <Row
           label={strings.info.versionLabel}
           control={
-            <span className="text-mono">
-              {info?.version || '—'}
-              {info?.label ? ` (${info.label})` : ''}
+            <span className="bb-info__version text-mono">
+              <span>{info?.version || '—'}{info?.label ? ` (${info.label})` : ''}</span>
+              {import.meta.env.VITE_BB_BUILD_KIND === 'src' && (
+                <span className="bb-info__version-note" tabIndex={0} aria-describedby="bb-info-version-note-tip">
+                  {strings.info.versionNote}
+                  <span id="bb-info-version-note-tip" className="bb-info__version-note-tip" role="tooltip">
+                    {strings.info.versionNoteDetail}
+                  </span>
+                </span>
+              )}
             </span>
           }
         />
@@ -114,6 +122,8 @@ export function InfoScreen() {
             {ABOUT.links.map((link) => {
               const hint = localeText(link.label, locale)
               const icon = <LinkIcon link={link} />
+              const accent = svgAccent(link.iconSvg)
+              const style = accent ? ({ '--bb-link-color': accent } as CSSProperties) : undefined
               // action decides behaviour, not field presence - see AboutLink's
               // docstring in lib/content.ts.
               if (link.action === 'popup') {
@@ -122,11 +132,12 @@ export function InfoScreen() {
                     key={link.id}
                     type="button"
                     className="bb-info__link"
+                    style={style}
                     title={hint}
                     aria-label={hint}
                     onClick={() => setOpenLink(link)}
                   >
-                    {icon}
+                    <span className="bb-info__link-icon">{icon}</span><span>{hint}</span>
                   </button>
                 )
               }
@@ -134,13 +145,14 @@ export function InfoScreen() {
                 <a
                   key={link.id}
                   className="bb-info__link"
+                  style={style}
                   href={link.url}
                   title={hint}
                   aria-label={hint}
                   target="_blank"
                   rel="noopener noreferrer"
                 >
-                  {icon}
+                  <span className="bb-info__link-icon">{icon}</span><span>{hint}</span>
                 </a>
               )
             })}
@@ -153,7 +165,7 @@ export function InfoScreen() {
       <AnimatePresence>
         {openLink && (
           <Modal title={localeText(openLink.popupTitle, locale)} onClose={() => setOpenLink(null)}>
-            <p className="text-body">{renderRich(localeText(openLink.popupText, locale))}</p>
+            <div className="text-body">{renderChangelogBody(localeText(openLink.popupText, locale))}</div>
             {openLink.popupUrl && (
               <a
                 className="bb-info__popup-link"

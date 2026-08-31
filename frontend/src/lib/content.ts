@@ -1,6 +1,12 @@
-import changelogData from '../data/content/changelog.json'
-import aboutData from '../data/content/about.json'
-import peopleData from '../data/content/people.json'
+// Import attributes, not bare JSON imports: node --test resolves this module
+// graph with Node's own strict ESM loader (changelog.ts is a real, non-type
+// import away from here - see its own comment), and that loader requires
+// `with { type: 'json' }` on every JSON import since Node 22. Vite has
+// understood the same syntax for just as long, so this costs the bundled
+// build nothing.
+import legacyChangelogData from '../data/content/legacyChangelog.json' with { type: 'json' }
+import aboutData from '../data/content/about.json' with { type: 'json' }
+import peopleData from '../data/content/people.json' with { type: 'json' }
 import type { Locale } from '../state/MotionPrefsContext'
 
 /** How important a release was - decides the changelog badge's colour. */
@@ -21,9 +27,13 @@ export interface ChangelogEntry {
   en: ChangelogText
 }
 
-/** New entries go at the TOP - see tools/build_content.py, which is what
- * actually writes here; this file is not meant to be hand-edited. */
-export const CHANGELOG = changelogData as ChangelogEntry[]
+/** The frozen pre-0.1.6 history - releases published before this app started
+ * writing "«Название» • MINOR/MAJOR/CRITICAL" directly into the GitHub
+ * release body (see lib/changelog.ts, which is where 0.1.6 and everything
+ * after actually comes from now). Never gains a new entry: nothing here
+ * needs editing again, and tools/build_content.py, which used to be what
+ * wrote this file, no longer touches it. */
+export const LEGACY_CHANGELOG = legacyChangelogData as ChangelogEntry[]
 
 /**
  * A link button on the Info screen: an icon with a hover hint (`label`),

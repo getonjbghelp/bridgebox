@@ -1,0 +1,80 @@
+[
+  {
+    "version": "0.1.5 (b1)",
+    "date": "2026-08-28",
+    "level": "minor",
+    "ru": {
+      "title": "Прогреваем Сервера",
+      "body": "В этой версии мост быстрее выходит на связь с серверами. **После запуска он в фоне заранее открывает соединения с серверами из активных профилей Ecast и Blobcast.** Если прогрев проходит успешно, **первый запрос игры может сразу использовать готовое соединение.** Запуск при этом не задерживается: если сервер недоступен, мост продолжает работать по прежнему сценарию.\n\nЧто ещё изменилось:\n- Стратегии Zapret с агрессивным режимом (syndata) теперь отмечаются в интерфейсе. Перед их применением BridgeBox предупреждает, что они могут хуже работать с долгими Blobcast-соединениями.\n- Сетевые логи стали информативнее: в них видны DNS-запросы, установка TCP/TLS-соединения, повторное использование соединений, общее время запроса и длительность WebSocket-сессий. Чувствительные данные по-прежнему скрываются.\n- Тест стратегий теперь проверяет Ecast и Blobcast за один запуск и показывает результаты в одной таблице.\n- Настройки разбиты на вкладки, сложные поля профилей свернуты, переключение между разделами стало плавнее. Добавлена общая настройка скорости анимаций.\n- Запуск portable-версии ускорен: сборка перешла на формат one-directory, а экран загрузки теперь плавно сменяется интерфейсом.\n- Экран логов лучше использует ширину окна, а сообщения об ошибках стали понятнее."
+    },
+    "en": {
+      "title": "Warming Servers Up",
+      "body": "In this version, the bridge connects to servers faster. **After launch, it proactively opens connections to servers from active Ecast and Blobcast profiles in the background.** If warm-up is successful, **the first game request can immediately use the opened connection.** There is no delay in startup: if a server is unavailable, the bridge continues to operate as usual.\n\nWhat else has changed:\n- Zapret strategies with aggressive mode (syndata) are now marked in the interface. Before applying them, BridgeBox warns that they may perform worse with long Blobcast connections.\n- Network logs have become more informative: they show DNS requests, TCP/TLS connection establishment, connection reuse, total request time, and WebSocket session duration. Sensitive data is still hidden.\n- The strategy test now tests Ecast and Blobcast in a single run and displays the results in a single table.\n- Settings are now tabbed, complex profile fields are collapsed, and switching between sections is smoother. A general animation speed setting has been added.\n- Portable version startup has been sped up: the build has been moved to a single-directory format, and the loading screen now transitions smoothly to the interface.\n- The log screen now utilizes the window width better, and error messages are clearer."
+    }
+  },
+  {
+    "version": "0.1.4 (b1)",
+    "date": "2026-08-26",
+    "level": "minor",
+    "ru": {
+      "title": "Исправления Zapret",
+      "body": "В данном обновлении список `list-jackbox.txt` **претерпел некоторые изменения**, а конкретно были добавлены следующие домены:\n`api.jackboxgames.com`\n`api-uat.jackboxgames.com`\n`binjpipe.jackboxgames.com`\n`jackbox.tv`\n`nopus-assets.jackbox.tv`\n\n\nПомимо этого, также была **исправлена автоадаптация старых стратегий и добавление новых при обновлении Zapret.** Плюсом были **изменены некоторые анимации** и **оптимизирован размер попапов**"
+    },
+    "en": {
+      "title": "Исправления Zapret",
+      "body": "In this update, the `list-jackbox.txt` list **has undergone some changes**, specifically the following domains have been added:\n`api.jackboxgames.com`\n`api-uat.jackboxgames.com`\n`binjpipe.jackboxgames.com`\n`jackbox.tv`\n`nopus-assets.jackbox.tv`\n\n\nIn addition, **the auto‑adaptation of old strategies and the addition of new ones during the Zapret update have also been fixed.** Furthermore, **some animations have been changed, and the size of pop‑ups has been optimized.**"
+    }
+  },
+  {
+    "version": "0.1.3 (b1)",
+    "date": "2026-08-23",
+    "level": "minor",
+    "ru": {
+      "title": "Автоматическая Вставка!",
+      "body": "Самым крупным изменением в этой версии является появление **автоматической вставки строки для подключения в Steam/Прочие Копии.**\n\nТеперь, открыв `«Как подключить игру?»` и выбрав одну из платформ, вы можете автоматически проставить строчек, без лишних меню и свойств.\n\nПомимо этого, был исправлен процесс обновления BridgeBox и отображение версии после сброса программы."
+    },
+    "en": {
+      "title": "Automatic Paste!",
+      "body": "The most significant change in this version is the **introduction of automatic paste of the connection string for Steam and other game copies.**\n\nNow, by opening the `\"How do I connect the game?\"` section and selecting a platform, you can automatically insert the required string without navigating through extra menus or properties.\n\nAdditionally, fixes have been made to the BridgeBox update process and the version display following a program reset."
+    }
+  },
+  {
+    "version": "0.1.2 (b1)",
+    "date": "2026-08-21",
+    "level": "minor",
+    "ru": {
+      "title": "Обновляемся сами",
+      "body": "Главное в этом релизе - BridgeBox научился обновлять сам себя: проверяет GitHub, показывает список изменений и подменяет свой .exe без похода в браузер, сверяя контрольную сумму загруженного файла.\nТуда же переехал список стороннего ПО и лицензий - теперь на экране «Инфо», и заметно подробнее прежнего.\n\n**Исправления Безопасности:**\n- Закрыто несколько способов, которыми браузер мог обойти защиту моста при подключении через Blobcast\n- Логи больше не могут случайно сохранить фрагмент чувствительных данных при обрезке длинной строки\n\n**Мелочи:**\n- Исправлен баг: при включённом автозапуске «свёрнутым» окно иногда всё равно открывалось\n- Настройки перегруппированы — стало проще найти нужное"
+    },
+    "en": {
+      "title": "Self-updating",
+      "body": "The headline feature this time: BridgeBox now updates itself. It checks GitHub, shows what changed, and swaps its own exe in without a trip to the browser, verifying the downloaded file’s checksum first.\nThe third-party software and license list moved there too - it’s now on the Info screen, and noticeably more detailed than before.\n\n**Security Changes:**\n- Closed a few ways a browser could slip past the bridge’s protection over a Blobcast connection\n- Logs can no longer accidentally keep a fragment of sensitive data when a long line gets truncated\n\n**Smaller things:**\n- Fixed a bug where the window sometimes still opened even with “start minimized” on\n- Settings got regrouped for easier scanning"
+    }
+  },
+  {
+    "version": "0.1.1 (b1)",
+    "date": "2026-08-15",
+    "level": "minor",
+    "ru": {
+      "title": "Багфиксы",
+      "body": "Программа BridgeBox продолжает улучшаться с каждым днем за счет исправления ряда неточностей (или же багов). \nКстати, вот список того, что было исправлено и добавлено:\n - Исправлен дефект с хедером окна на Windows 10\n - Был добавлен раздел благодарностей в меню «Инфо»\n- Исправлена анимация попапов на экране Инфо\n- Улучшена система антифрода"
+    },
+    "en": {
+      "title": "Bugfixes",
+      "body": "BridgeBox continues to improve every day thanks to the correction of a number of inaccuracies (or bugs). \nBy the way, here’s a list of what has been fixed and added:\n - A defect with the window header on Windows 10 has been fixed\n - A thanks section has been added to the “Info” menu\n- The animation of pop‑ups on the Info screen has been fixed\n- The anti‑fraud system has been improved"
+    }
+  },
+  {
+    "version": "0.1 (b1)",
+    "date": "2026-08-14",
+    "level": "major",
+    "ru": {
+      "title": "Первая бета",
+      "body": "**Встречайте первую публичную бету BridgeBox!** \nBridgeBox создан для того, чтобы обходить блокировки локально на вашем ПК, не полагаясь на сторонние сервера, которые часто падают под нагрузкой в самый разгар игры.\nЭто самый первый релиз, но под капотом уже есть всё необходимое:\n\n- **Поддержка игр:** полный обход для всех частей The Jackbox Party Pack и сольных проектов (кроме Demo TMP3 - из-за другой механики серверов для неё требуется отдельное решение).\n- **Система профилей:** вы сами решаете, куда направлять трафик и какие запросы проксировать.\n- **Умная интеграция с Zapret:** обновление компонентов, автоадаптация и встроенный тест стратегий.\n- **Удобство в фоне:** сворачивание в трей и автозапуск вместе с системой.\n- **Легкий старт:** пошаговый мастер первой настройки и понятные инструкции.\n- **Безопасность и кастомизация:** смена порта для моста и проверка подлинности сборки."
+    },
+    "en": {
+      "title": "First beta",
+      "body": "**Introducing the first public beta of BridgeBox!**\nBridgeBox is designed to bypass restrictions locally right on your PC, without relying on third-party servers that often crash under heavy load right in the middle of a game.\nThis is our very first release, but under the hood, it already has everything you need:\n\n- **Game Support:** Full bypass for all The Jackbox Party Pack titles and standalone releases (except for the TMP3 Demo - its different server mechanics require a separate solution).\n- **Profile System:** You decide where to route traffic and which requests to proxy.\n- **Smart Zapret Integration:** Component updates, auto-adaptation, and a built-in strategy tester.\n- **Background Convenience:** Minimize to system tray and auto-start on system boot.\n- **Easy Onboarding:** A step-by-step initial setup wizard and clear instructions.\n- **Security & Customization:** Custom bridge port selection and build authenticity verification."
+    }
+  }
+]

@@ -260,7 +260,14 @@ class FakeRuntimeCore:
         return {"running": False}
 
 
-def _make_api(tmp_path: Path, *, config: Config | None = None, runtime=None, runtime_core=None):
+def _make_api(
+    tmp_path: Path,
+    *,
+    config: Config | None = None,
+    runtime=None,
+    runtime_core=None,
+    tracer_enabled: bool = False,
+):
     config = config or Config()
     runtime = runtime or FakeRuntime()
     return desktop.Api(
@@ -273,7 +280,63 @@ def _make_api(tmp_path: Path, *, config: Config | None = None, runtime=None, run
         # Real startup checks wait STARTUP_NETWORK_CHECK_DELAY_S before
         # reaching GitHub - tests want the fake network call, not the wait.
         startup_check_delay_s=0,
+        # Likewise for the integrity hash, which really does wait ten
+        # seconds in the app to stay clear of the first interactions.
+        integrity_delay_s=0,
+        tracer_enabled=tracer_enabled,
     )
+
+
+def test_tracer_enabled_is_off_by_default(tmp_path: Path):
+    """The motion tracer is a permanent rAF loop plus an 8ms timer (see
+    frontend/src/lib/motionTrace.ts) - harmless to carry in every build, but
+    it must not turn itself on without --tracer."""
+    api = _make_api(tmp_path)
+
+    assert api.tracer_enabled() is False
+
+
+def test_tracer_enabled_reflects_the_flag_it_was_launched_with(tmp_path: Path):
+    api = _make_api(tmp_path, tracer_enabled=True)
+
+    assert api.tracer_enabled() is True
+
+
+def test_main_reads_tracer_enabled_from_argv(monkeypatch):
+    """--tracer is desktop.main()'s own job to notice (via sys.argv), same as
+    --dev and --minimized right next to it - this pins that reading it stays
+    wired to the Api() call rather than silently dropped in a refactor."""
+    monkeypatch.setattr(sys, "argv", ["bridgebox.exe", "--dev", "--tracer"])
+    fake_window = _FakeWindow()
+    created = {}
+
+    def fake_create_window(title, url, **kwargs):
+        created["js_api"] = kwargs["js_api"]
+        return fake_window
+
+    monkeypatch.setattr(desktop.webview, "create_window", fake_create_window)
+    monkeypatch.setattr(desktop.webview, "start", lambda: None)
+
+    desktop.main(admin_check=lambda: True, startup_check_delay_s=0)
+
+    assert created["js_api"].tracer_enabled() is True
+
+
+def test_main_defaults_tracer_enabled_to_off(monkeypatch):
+    monkeypatch.setattr(sys, "argv", ["bridgebox.exe", "--dev"])
+    fake_window = _FakeWindow()
+    created = {}
+
+    def fake_create_window(title, url, **kwargs):
+        created["js_api"] = kwargs["js_api"]
+        return fake_window
+
+    monkeypatch.setattr(desktop.webview, "create_window", fake_create_window)
+    monkeypatch.setattr(desktop.webview, "start", lambda: None)
+
+    desktop.main(admin_check=lambda: True, startup_check_delay_s=0)
+
+    assert created["js_api"].tracer_enabled() is False
 
 
 def test_api_bridge_start_returns_ok_dict(tmp_path: Path):
@@ -819,6 +882,30 @@ def test_api_test_strategies_rejects_an_unknown_target_set(tmp_path: Path):
     assert result["total"] == 0
 
 
+def test_api_test_strategies_stops_a_running_bridge_first(tmp_path: Path):
+    """The suite drives the same winws/WinDivert the bridge itself owns -
+    leaving the bridge (and a real game session on it) running through
+    dozens of strategy switches would yank its DPI bypass in and out on
+    every one, not just leave the test running alongside an idle bridge."""
+    runtime = FakeRuntime(status={"running": True, "host": "127.0.0.1", "port": 8443})
+    api = _make_api(tmp_path, runtime=runtime)
+
+    api.test_strategies()
+
+    assert runtime.stop_calls == 1
+
+
+def test_api_test_strategies_does_not_call_stop_when_the_bridge_is_already_off(
+    tmp_path: Path,
+):
+    runtime = FakeRuntime(status={"running": False, "host": "127.0.0.1", "port": 8443})
+    api = _make_api(tmp_path, runtime=runtime)
+
+    api.test_strategies()
+
+    assert runtime.stop_calls == 0
+
+
 class _FakeZapretProcess:
     """Just enough of ZapretProcess for build_switch's switch() to run: an
     is_running flag it can stop, and a start() that records what it was
@@ -853,6 +940,7 @@ def test_api_test_strategies_both_runs_two_full_stages(tmp_path: Path):
     started = api.test_strategies(target_set="both")
     assert started["ok"] is True, started
     assert started["total"] == 2  # 1 strategy x 2 stages
+    assert api._runtime_core.stop_calls == 1, "strategy suite must stop the bridge before probing"
 
     progress = api.test_strategies_progress()
     assert progress["done"] is True, progress
@@ -1242,6 +1330,40 @@ def test_check_app_update_never_raises_returns_error_dict(tmp_path: Path):
     assert result["updateAvailable"] is False
 
 
+def test_changelog_returns_the_release_list(tmp_path: Path, monkeypatch):
+    api = _make_api(tmp_path)
+
+    async def fake_changelog_coro():
+        return {
+            "ok": True, "error": None,
+            "releases": [
+                {"version": "0.1.6", "name": "0.1.6", "body": "«Title» • MINOR",
+                 "date": "2026-09-01", "htmlUrl": "https://github.com/getonjbghelp/bridgebox/releases/tag/v0.1.6"},
+            ],
+        }
+
+    monkeypatch.setattr(api, "_changelog_coro", fake_changelog_coro)
+
+    result = api.changelog()
+
+    assert result["ok"] is True
+    assert result["releases"][0]["version"] == "0.1.6"
+
+
+def test_changelog_never_raises_returns_error_dict(tmp_path: Path):
+    class FailingRuntime(FakeRuntime):
+        def run(self, coro_factory, timeout=25.0):
+            raise OSError("no network")
+
+    api = _make_api(tmp_path, runtime=FailingRuntime())
+
+    result = api.changelog()
+
+    assert result["ok"] is False
+    assert "no network" in result["error"]
+    assert result["releases"] == []
+
+
 def test_dismiss_app_update_persists_the_version_and_is_readable_back(tmp_path: Path):
     api = _make_api(tmp_path)
 
@@ -1275,6 +1397,35 @@ def test_check_app_update_coro_reads_the_installed_version_from_version_module(
     result = _asyncio.run(api._check_app_update_coro())
 
     assert result["installed"] == "9.9.9"
+
+
+def test_changelog_coro_shapes_the_release_dict(tmp_path: Path, monkeypatch):
+    """The one seam most likely to typo a key name (htmlUrl vs html_url) -
+    pinned against app_update.fetch_releases directly, same shape as
+    _check_app_update_coro's own wiring test above."""
+
+    async def fake_fetch(session, **kw):
+        return [
+            desktop_app_update.app_update.ChangelogRelease(
+                version="0.1.6", name="0.1.6", body="«Title» • MINOR",
+                date="2026-09-01",
+                html_url="https://github.com/getonjbghelp/bridgebox/releases/tag/v0.1.6",
+            )
+        ]
+
+    monkeypatch.setattr(desktop.app_update, "fetch_releases", fake_fetch)
+    api = _make_api(tmp_path)
+
+    import asyncio as _asyncio
+
+    result = _asyncio.run(api._changelog_coro())
+
+    assert result["ok"] is True
+    assert result["releases"] == [{
+        "version": "0.1.6", "name": "0.1.6", "body": "«Title» • MINOR",
+        "date": "2026-09-01",
+        "htmlUrl": "https://github.com/getonjbghelp/bridgebox/releases/tag/v0.1.6",
+    }]
 
 
 # ---- BridgeBox's own self-update (download + swap the running .exe) ------

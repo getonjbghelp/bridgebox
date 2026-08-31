@@ -125,8 +125,5 @@ test('App.tsx is what takes the skeleton down', () => {
   const app = readFileSync(here + '../src/App.tsx', 'utf8')
 
   assert.ok(app.includes("getElementById('bb-boot')"), 'App.tsx must dismiss the skeleton')
-  assert.ok(
-    app.includes('if (setupComplete === null) return\n'),
-    'the dismissal must wait for setupComplete',
-  )
+  assert.match(app, /if \(setupComplete === null\) return\r?\n/, 'the dismissal must wait for setupComplete')
 })

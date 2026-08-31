@@ -72,6 +72,7 @@ logger = logging.getLogger(__name__)
 
 REPO = "getonjbghelp/bridgebox"
 RELEASES_URL = f"https://api.github.com/repos/{REPO}/releases/latest"
+ALL_RELEASES_URL = f"https://api.github.com/repos/{REPO}/releases?per_page=100"
 
 # api.github.com/github.com for the release metadata itself; the asset
 # download redirects off github.com onto one of the two CDN hosts below -
@@ -214,6 +215,55 @@ async def fetch_latest_release(session, *, url: str = RELEASES_URL) -> AppReleas
         asset_digest=asset_digest,
         asset_is_archive=asset_is_archive,
     )
+
+
+@dataclass
+class ChangelogRelease:
+    """One entry for the Info screen's "История версий" - a release's
+    identity and body, nothing about its assets. A different, smaller shape
+    than AppRelease on purpose: building one of those per release would
+    re-run _pick_update_asset (and its digest/size bookkeeping) for every
+    entry in the list just to throw the result away, for data this call
+    never uses."""
+
+    version: str  # leading "v" stripped, same convention as AppRelease
+    name: str
+    body: str
+    date: str  # ISO date (published_at, truncated to the day)
+    html_url: str
+
+
+async def fetch_releases(session, *, url: str = ALL_RELEASES_URL) -> list[ChangelogRelease]:
+    """Every published, non-draft release - newest first, GitHub's own order.
+
+    Not filtered on `prerelease`: this app ships its normal betas as GitHub
+    releases (see the existing "0.1.5 (b1)" changelog entry), so excluding
+    them would hide most of the actual history."""
+    async with session.get(url, headers={"Accept": "application/vnd.github+json"}) as response:
+        response.raise_for_status()
+        payload = await response.json()
+
+    releases: list[ChangelogRelease] = []
+    for entry in payload if isinstance(payload, list) else []:
+        if entry.get("draft"):
+            continue
+        tag = str(entry.get("tag_name") or "").strip()
+        version = tag[1:] if tag[:1] in ("v", "V") else tag
+        if not version:
+            continue
+        html_url = str(entry.get("html_url") or f"https://github.com/{REPO}/releases/tag/{tag}")
+        _require_allowed_host(html_url)
+        published = str(entry.get("published_at") or entry.get("created_at") or "")
+        releases.append(
+            ChangelogRelease(
+                version=version,
+                name=str(entry.get("name") or tag),
+                body=str(entry.get("body") or ""),
+                date=published[:10],
+                html_url=html_url,
+            )
+        )
+    return releases
 
 
 def _pick_update_asset(assets: list) -> dict | None:

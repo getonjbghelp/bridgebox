@@ -30,12 +30,26 @@
  * slides to the centre of the collapsed box without a layout pass.
  */
 .bb-logo-slot {
+  /* A <button> now (Sidebar.tsx - the click starts/stops the letter bounce),
+     so the native chrome that comes with the element needs resetting back to
+     what the bare <span> this used to be never had in the first place. */
+  border: none;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
   /* From BrandLogo.tsx, which derives it from the measured glyph boxes. */
   width: var(--bb-logo-wordmark);
   height: var(--bb-logo-height);
   flex-shrink: 0;
   color: var(--color-text-primary);
   transition: transform var(--dur-slow) var(--ease-out);
+}
+
+/* Collapsed, the click is a no-op (Sidebar.tsx) - the pointer should say so
+   rather than promise an interaction that will not happen. */
+.bb-sidebar[data-collapsed='true'] .bb-logo-slot {
+  cursor: default;
 }
 
 /* Light theme only: the accent navy reads as the brand's own colour there.
@@ -47,10 +61,20 @@
 }
 
 /* No size here on purpose: the logo is used at two very different scales (the
-   rail and the home hero), and each caller sizes it. The viewBox does the rest. */
+   rail and the home hero), and each caller sizes it. The viewBox does the rest.
+ *
+ * overflow: visible because a root <svg> clips to its viewBox by default, and
+ * the wordmark's glyphs sit flush against that box's top edge (y starts at
+ * 89, right where the tallest letters do - see BrandLogo.tsx's own measured
+ * content-box comment). The bounce easter egg below lifts letters above that
+ * edge; without this they'd get silently clipped mid-hop. Nothing else here
+ * ever paints outside the viewBox, so this has no effect the rest of the time
+ * - the rail's own overflow:hidden (Sidebar.css) is what still clips the
+ * collapse telescope horizontally, unrelated to this. */
 .bb-logo {
   display: block;
   fill: currentColor;
+  overflow: visible;
 }
 
 /* Inside the rail the svg is the wordmark's full width at all times; the rail's
@@ -129,4 +153,74 @@
 :root[data-animations='off'] .bb-logo__tail,
 :root[data-animations='off'] .bb-logo__glyph {
   transition: none;
+}
+
+/* The letter-bounce easter egg: click the expanded wordmark (Sidebar.tsx) and
+   b-r-i-d-g-e-b-o-x hop one after another.
+ *
+ * Every letter is wrapped in its own <g class="bb-logo__hop"> purely to carry
+ * this - see BrandLogo.tsx's own comment on why. The short version: the
+ * collapse telescope already owns .bb-logo__glyph's transform (translateX,
+ * with a per-letter transition-delay so "ridge" sweeps into the B in
+ * sequence) and .bb-logo__b has none at all. A bounce living on either of
+ * those would either fight the tuck's own delay when it tried to settle back
+ * out, or - on the bare B's - have nothing to smoothly settle THROUGH at all.
+ * A dedicated wrapper per letter means the bounce's translateY and the tuck's
+ * translateX are two different elements' transforms, composing for free
+ * instead of colliding on one.
+ */
+.bb-logo__hop {
+  transform-box: fill-box;
+  /* This is what makes the second click's "stop smoothly" free: removing the
+     animation below does not snap transform back to rest, it hands the
+     element to THIS transition, which glides from wherever the animation
+     left it. No JS reads a live transform value to do that by hand. */
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+
+/* px here means user units (same rule as .bb-logo__tail's translateX above -
+   transform-box: fill-box does not change that). The wordmark's viewBox is
+   786.5 units tall rendered at the rail's 26px --bb-logo-height, a ~30x
+   scale - a peak of -7px here painted as an UNDER-QUARTER-PIXEL hop,
+   correctly running (confirmed by sampling getBoundingClientRect frame by
+   frame) but functionally invisible, which is exactly the bug this fixes.
+   These are that same intended arc - a ~7px rise, a hair of overshoot below
+   rest, a small rebound - multiplied by the same ~30x so it actually lands
+   at the size it always looked like it would. */
+@keyframes bb-logo-bounce {
+  0% {
+    transform: translateY(0);
+  }
+  30% {
+    transform: translateY(-212px);
+  }
+  55% {
+    transform: translateY(30px);
+  }
+  75% {
+    transform: translateY(-60px);
+  }
+  100% {
+    transform: translateY(0);
+  }
+}
+
+.bb-sidebar[data-bouncing='true'] .bb-logo__hop {
+  animation: bb-logo-bounce 420ms var(--ease-out);
+  /* Per letter (BrandLogo.tsx's hop()) - what actually makes this read as a
+     wave passing through the word rather than the whole mark flexing once. */
+  animation-delay: var(--bb-bounce-delay, 0ms);
+}
+
+/* prefers-reduced-motion needs nothing bespoke here - global.css already
+   forces every animation/transition duration to ~0 under it (see its own
+   comment), the bounce keyframes included. Settings' in-app toggle is the
+   one that needs an explicit override: it does not touch OS media queries
+   or the duration tokens, only what each component states by hand. */
+:root[data-animations='off'] .bb-logo__hop {
+  transition: none;
+}
+
+:root[data-animations='off'] .bb-sidebar[data-bouncing='true'] .bb-logo__hop {
+  animation: none;
 }

@@ -1,7 +1,7 @@
 [project]
 name = "bridgebox"
-version = "0.1.5b1"
-description = "Local proxy bridge for Jackbox Games DPI-bypass routing via Zapret"
+version = "0.1.6b1"
+description = "Toolkit for filtering DPI traffic to Jackbox servers"
 requires-python = ">=3.11"
 dependencies = [
     "pydantic>=2.7",

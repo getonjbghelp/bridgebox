@@ -1,25 +1,32 @@
-"""Build a portable BridgeBox release (bridgebox.exe + _internal/).
+"""Build a portable BridgeBox release (onedir: bridgebox.exe + _internal/).
 
     python tools/build_portable.py
-    python tools/build_portable.py --skip-frontend-build   # reuse frontend/dist
     python tools/build_portable.py --icon path\\to\\real.ico
-    python tools/build_portable.py --gui                   # small Tk window instead of the CLI
+    python tools/build_portable.py --gui            # small Tk window instead of the CLI
+
+Anyone building from a source checkout runs this; a frontend/dist reused
+from a previous build is not accepted here (see build_frontend below).
 
 Produces dist/BridgeBox_Portable/:
 
-    bridgebox.exe   _internal/   config.yaml   README.md   LICENSE.md   CREDITS.md
-    baseline.json   certs/   temp/   logs/   zapret/
+    bridgebox.exe   _internal/      config.yaml   README.md   LICENSE.md
+    CREDITS.md      baseline.json   certs/   temp/   logs/   zapret/
 
-Every one of those, `bridgebox.exe` and `_internal/` included, lives beside every other one -
-no installer, no %APPDATA%, no registry key. That constraint is what decides
-most of the shape below:
+Every one of those, `bridgebox.exe` and `_internal/` included, lives beside
+every other one - no installer, no %APPDATA%, no registry key. That
+constraint is what decides most of the shape below:
 
 - backend/bridgebox/paths.py resolves config.yaml/logs/certs/temp/zapret
   against `sys.executable`'s own folder when frozen, so wherever this
   release folder gets copied to IS the install. See that module for the
-  other half (frontend/dist has to come from somewhere ELSE - the exe
-  itself - since it isn't shipped as a loose folder at all here).
-- frontend/dist and backend/pyproject.toml live inside `_internal/`.
+  other half (frontend/dist has to come from somewhere ELSE - _internal/,
+  by way of sys._MEIPASS - since it isn't shipped as a loose folder at all
+  here).
+- frontend/dist and backend/pyproject.toml are bundled INSIDE _internal/
+  (PyInstaller --add-data), not shipped loose, which is why the release
+  folder above has no frontend/ entry. onedir rather than --onefile: the
+  latter re-extracts everything bundled to a fresh temp folder on EVERY
+  launch, not just the first - see run_pyinstaller's own comment.
 - zapret/ ships loose and real: winws.exe is executed as a child process
   from wherever it sits on disk, and the strategy .bat/hostlist files are
   meant to stay user-editable.
@@ -86,11 +93,11 @@ def log(message: str) -> None:
         print(line, flush=True)
 
 
-def run(cmd: list[str], *, cwd: Path | None = None) -> None:
+def run(cmd: list[str], *, cwd: Path | None = None, env: dict[str, str] | None = None) -> None:
     log("  $ " + " ".join(str(part) for part in cmd))
     process = subprocess.Popen(
         cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-        text=True, encoding="utf-8", errors="replace", bufsize=1,
+        text=True, encoding="utf-8", errors="replace", bufsize=1, env=env,
     )
     assert process.stdout is not None
     for raw_line in process.stdout:
@@ -186,6 +193,7 @@ VSVersionInfo(
         StringTable(
           u'040904B0',
           [StringStruct(u'CompanyName', u'{company_q}'),
+           StringStruct(u'Comments', u'Community rebuild - verify the source before trusting this copy.'),
            StringStruct(u'FileDescription', u'{description_q}'),
            StringStruct(u'FileVersion', u'{version}'),
            StringStruct(u'InternalName', u'{APP_NAME}'),
@@ -252,13 +260,18 @@ def ensure_icon(icon_arg: str | None) -> Path:
 # ---- frontend / dependencies ----------------------------------------------
 
 
+def frontend_build_env() -> dict[str, str]:
+    env = os.environ.copy()
+    env["VITE_BB_BUILD_KIND"] = "src"
+    return env
+
+
 def build_frontend(*, skip: bool) -> None:
     dist_index = FRONTEND_DIR / "dist" / "index.html"
     if skip:
-        if not dist_index.exists():
-            raise SystemExit("--skip-frontend-build given but frontend/dist/index.html is missing")
-        log("Skipping frontend build (--skip-frontend-build) - reusing frontend/dist as-is")
-        return
+        raise SystemExit(
+            "--skip-frontend-build is not supported here - frontend/dist must be built fresh"
+        )
 
     npm = shutil.which("npm")
     if not npm:
@@ -267,7 +280,7 @@ def build_frontend(*, skip: bool) -> None:
     log("Building frontend (npm run build)...")
     if not (FRONTEND_DIR / "node_modules").exists():
         run([npm, "install"], cwd=FRONTEND_DIR)
-    run([npm, "run", "build"], cwd=FRONTEND_DIR)
+    run([npm, "run", "build"], cwd=FRONTEND_DIR, env=frontend_build_env())
 
     if not dist_index.exists():
         raise SystemExit(f"frontend build did not produce {dist_index}")
@@ -310,29 +323,7 @@ def clean_previous_build() -> None:
 # ---- PyInstaller -------------------------------------------------------
 
 
-_ORIGIN_RE = re.compile(r"^https://github\.com/getonjbghelp/bridgebox(\.git)?$")
-
-
-def _pyproject_for_build() -> Path:
-    real = BACKEND_DIR / "pyproject.toml"
-    try:
-        origin = subprocess.run(
-            ["git", "remote", "get-url", "origin"], cwd=REPO_ROOT,
-            capture_output=True, text=True, check=True,
-        ).stdout.strip()
-    except (subprocess.CalledProcessError, OSError):
-        return real
-    if not _ORIGIN_RE.match(origin):
-        return real
-    tagged = BUILD_DIR / "pyproject.toml"
-    tagged.write_text(
-        real.read_text(encoding="utf-8") + '\n[tool.bridgebox]\nchannel = "public"\n',
-        encoding="utf-8",
-    )
-    return tagged
-
-
-def run_pyinstaller(icon_path: Path, version_info_path: Path, pyproject_path: Path) -> Path:
+def run_pyinstaller(icon_path: Path, version_info_path: Path) -> Path:
     log("Compiling bridgebox.exe (PyInstaller)...")
     cmd = [
         str(VENV_PYTHON),
@@ -340,7 +331,15 @@ def run_pyinstaller(icon_path: Path, version_info_path: Path, pyproject_path: Pa
         "PyInstaller",
         "--noconfirm",
         "--clean",
-        "--onedir",
+        # onedir, not --onefile: a onefile build has to unpack itself into a
+        # fresh temp folder on EVERY launch (the earlier bridgebox.exe alone
+        # was ~57 MB, roughly half of it the onboarding GIFs bundled into
+        # frontend/dist) - a real, repeated cost, not just a one-time first
+        # run. onedir unpacks once at build time; a launch just runs the exe
+        # in place. Costs one more visible folder beside bridgebox.exe
+        # (_internal/) in an already-portable, already-multi-folder release -
+        # see assemble_release below, and app_update.py for the self-update
+        # side of this (it now swaps the whole folder, not one file).
         # No console window ever, on a double-click launch (aliases:
         # --noconsole / -w). See paths.py/logging_setup.py for why the app
         # is safe to run with sys.stdout/sys.stderr as None either way.
@@ -364,7 +363,7 @@ def run_pyinstaller(icon_path: Path, version_info_path: Path, pyproject_path: Pa
         "--add-data",
         f"{FRONTEND_DIR / 'dist'}{os.pathsep}frontend/dist",
         "--add-data",
-        f"{pyproject_path}{os.pathsep}.",
+        f"{BACKEND_DIR / 'pyproject.toml'}{os.pathsep}.",
         # launcher.py only imports bridgebox.desktop from inside a function,
         # and desktop.py reaches the rest of the package through it - belt
         # and suspenders against PyInstaller's analysis missing a branch.
@@ -386,6 +385,9 @@ def run_pyinstaller(icon_path: Path, version_info_path: Path, pyproject_path: Pa
     ]
     run(cmd)
 
+    # onedir's own output shape: PYI_DIST_DIR/<name>/ holds the exe plus
+    # _internal/ (everything else) - the folder assemble_release copies
+    # whole into the release, not just the exe file inside it.
     app_dir = PYI_DIST_DIR / APP_NAME
     exe = app_dir / f"{APP_NAME}.exe"
     if not exe.exists():
@@ -420,12 +422,18 @@ def write_default_config(config_path: Path) -> None:
 def assemble_release(app_dir: Path) -> None:
     log(f"Assembling release folder: {RELEASE_DIR}")
     RELEASE_DIR.mkdir(parents=True)
+    # The whole onedir output (bridgebox.exe + _internal/), not just the exe -
+    # _internal/ is what makes the exe runnable at all now (see
+    # run_pyinstaller's own comment). copytree rather than a second
+    # PyInstaller --distpath straight into RELEASE_DIR: the assembly and
+    # validation steps below want one finished folder to work with, built the
+    # same way regardless of what PyInstaller's own dist/ layout happens to be.
     for entry in app_dir.iterdir():
-        destination = RELEASE_DIR / entry.name
+        dest = RELEASE_DIR / entry.name
         if entry.is_dir():
-            shutil.copytree(entry, destination)
+            shutil.copytree(entry, dest)
         else:
-            shutil.copy2(entry, destination)
+            shutil.copy2(entry, dest)
 
     for name in ("certs", "temp", "logs"):
         (RELEASE_DIR / name).mkdir()
@@ -445,9 +453,10 @@ def assemble_release(app_dir: Path) -> None:
 def write_integrity_baseline(release_dir: Path) -> None:
     """The trust-on-first-use gap integrity.py's own docstring names: run
     from a subprocess with sys.frozen forced True, so WATCHED_GLOBS picks
-    its frozen branch (bridgebox.exe + _internal/ + zapret/, not the source-tree globs a
-    portable release doesn't have) and the manifest this writes matches
-    what the packaged app will actually check itself against at runtime."""
+    its frozen branch (bridgebox.exe + _internal/ + zapret/, not the
+    source-tree globs a portable release doesn't have) and the manifest this
+    writes matches what the packaged app will actually check itself against
+    at runtime."""
     script = (
         "import sys; sys.frozen = True; sys.path.insert(0, r'{backend}'); "
         "from bridgebox import integrity; "
@@ -499,16 +508,23 @@ def validate_release() -> None:
     exe = RELEASE_DIR / f"{APP_NAME}.exe"
     internal_dir = RELEASE_DIR / "_internal"
     if exe.exists() and internal_dir.is_dir():
+        # onedir's own split: the exe stub is now just a launcher (a couple
+        # MB), and everything that used to make the old onefile exe big -
+        # the Python runtime, every compiled extension, frontend/dist - lives
+        # in _internal/ instead. The old "< 5 MB" check was sized for a
+        # single file holding all of that; checking the pair's combined size
+        # is what that check actually meant.
         exe_size_mb = exe.stat().st_size / (1024 * 1024)
         internal_size_mb = sum(
-            file.stat().st_size for file in internal_dir.rglob("*") if file.is_file()
+            f.stat().st_size for f in internal_dir.rglob("*") if f.is_file()
         ) / (1024 * 1024)
         total_mb = exe_size_mb + internal_size_mb
         log(f"  {APP_NAME}.exe: {exe_size_mb:.1f} MB, _internal/: {internal_size_mb:.1f} MB")
         if total_mb < 30:
             problems.append(
-                f"bridgebox.exe + _internal/ together are only {total_mb:.1f} MB - looks too small for a "
-                "webview+aiohttp+cryptography build, the compile may have failed silently"
+                f"bridgebox.exe + _internal/ together are only {total_mb:.1f} MB - looks too "
+                "small for a webview+aiohttp+cryptography build, the compile may have failed "
+                "silently"
             )
 
         # Best-effort only: this catches the build machine's own path
@@ -520,12 +536,12 @@ def validate_release() -> None:
         # of nothing leaked.
         needle = str(REPO_ROOT).encode("utf-8")
         leaked = [
-            file for file in (exe, *internal_dir.rglob("*"))
-            if file.is_file() and file.suffix.lower() not in (".pyc", ".dll", ".pyd")
-            and needle in file.read_bytes()
+            f for f in (exe, *internal_dir.rglob("*"))
+            if f.is_file() and f.suffix.lower() not in (".pyc", ".dll", ".pyd")
+            and needle in f.read_bytes()
         ]
         if leaked:
-            names = ", ".join(str(file.relative_to(RELEASE_DIR)) for file in leaked[:5])
+            names = ", ".join(str(f.relative_to(RELEASE_DIR)) for f in leaked[:5])
             problems.append(f"the build machine's own path ({REPO_ROOT}) is embedded in: {names}")
 
     if (RELEASE_DIR / "baseline.json").exists():
@@ -591,7 +607,7 @@ def run_pipeline(args: argparse.Namespace) -> None:
         company=args.company, product=args.product, description=args.description,
     )
 
-    app_dir = run_pyinstaller(icon_path, version_info_path, _pyproject_for_build())
+    app_dir = run_pyinstaller(icon_path, version_info_path)
     assemble_release(app_dir)
     write_integrity_baseline(RELEASE_DIR)
     validate_release()

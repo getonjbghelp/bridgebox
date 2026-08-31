@@ -67,15 +67,7 @@ const RESTART_SCOPE: Record<string, 'bridge' | 'app'> = {
 // Left-to-right order the tab bar itself shows them in - the only source of
 // truth for which way a switch should slide, so the animation never drifts
 // out of sync with a future reordering of the Segmented's own options.
-//
-// Ordered by relevance, not alphabetically or by when each tab was added:
-// Сеть (the strategy picker - what someone actually opens Settings to fix
-// when a game won't connect) and Профили (which upstream/protocol traffic
-// even routes to) are the two tabs a working install still gets touched
-// for; Общие (appearance/autostart) is everyday but rarely urgent;
-// Обновления is occasional maintenance; Система (port, console, factory
-// reset) is the advanced/rare/destructive end, so it sits last.
-const TAB_ORDER: SettingsTab[] = ['network', 'profiles', 'general', 'updates', 'system']
+const TAB_ORDER: SettingsTab[] = ['general', 'system', 'network', 'updates', 'profiles']
 
 // Which visible section a RESTART_SCOPE key's own controls live in, so the
 // dirty banner can name what changed instead of a bare "settings changed".
@@ -687,11 +679,11 @@ export function SettingsScreen() {
           onChange={changeTab}
           ariaLabel={strings.settings.tabsAriaLabel}
           options={[
-            { value: 'network', label: strings.settings.tabNetwork },
-            { value: 'profiles', label: strings.settings.tabProfiles },
             { value: 'general', label: strings.settings.tabGeneral },
-            { value: 'updates', label: strings.settings.tabUpdates },
             { value: 'system', label: strings.settings.systemSectionTitle },
+            { value: 'network', label: strings.settings.tabNetwork },
+            { value: 'updates', label: strings.settings.tabUpdates },
+            { value: 'profiles', label: strings.settings.tabProfiles },
           ]}
         />
       </div>

@@ -1,9 +1,10 @@
 import { AnimatePresence, motion } from 'framer-motion'
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { useMotionPrefs } from '../state/MotionPrefsContext'
 import { useMicroTransition } from '../lib/motion'
 import { useStrings } from '../lib/strings'
 import { BrandLogo, LOGO_HEIGHT, MONOGRAM_WIDTH, WORDMARK_WIDTH } from './BrandLogo'
+import { BOUNCE_TOTAL_MS } from '../lib/brandLogoBounce'
 import { BugReportModal } from './BugReportModal'
 import { IconChevron, IconHome, IconInfo, IconLogs, IconMegaphone, IconSettings } from './icons'
 import type { Screen } from '../App'
@@ -44,21 +45,61 @@ export function Sidebar({
   const pillTransition = useMicroTransition()
   const { sidebarCollapsed, setSidebarCollapsed } = useMotionPrefs()
   const [bugReportOpen, setBugReportOpen] = useState(false)
+  // The letter-bounce easter egg. A click toggles it - starting it while at
+  // rest, or stopping it early (see BrandLogo.css's own comment on how a
+  // second click "smoothly" stops mid-wave: removing this attribute is all
+  // it takes, the CSS transition underneath does the rest).
+  const [bouncing, setBouncing] = useState(false)
+  // The collapse telescope and the bounce both want the same transform axis
+  // family on the same letters, and a wordmark collapsing INTO the rail
+  // while still hopping would read as broken rather than playful - so
+  // collapsing wins outright the moment it starts. Gated here, during
+  // render, rather than reset through an effect watching sidebarCollapsed:
+  // the attribute below has to go false on the SAME commit the collapse
+  // does, and a derived value costs nothing an effect-plus-extra-render
+  // would only have delayed by a frame.
+  const isBouncing = bouncing && !sidebarCollapsed
+
+  // A bounce that finished playing has nothing left animating, but without
+  // this the state would stay "on" forever after the first click - the next
+  // click would then read as "stop" instead of starting a fresh wave.
+  useEffect(() => {
+    if (!bouncing) return
+    const id = window.setTimeout(() => setBouncing(false), BOUNCE_TOTAL_MS)
+    return () => window.clearTimeout(id)
+  }, [bouncing])
 
   return (
     <nav
       className="bb-sidebar"
       data-collapsed={sidebarCollapsed}
+      data-bouncing={isBouncing}
       aria-label={strings.sidebar.ariaLabel}
       style={LOGO_VARS}
     >
       {/* One asset for both states. The wordmark contracts into its own two
           B's rather than cross-fading to a separate mark, so nothing pops and
-          the brand never appears in two sizes at once. */}
+          the brand never appears in two sizes at once.
+
+          Always a <button>, collapsed or not - swapping it for a <span>
+          while collapsed would remount the whole SVG subtree and cut the
+          collapse transition off mid-flight, since a freshly mounted node
+          has no "before" state left to transition from. Collapsed, the
+          click is simply a no-op (see toggleBounce) rather than the element
+          disappearing. */}
       <div className="bb-sidebar__brand">
-        <span className="bb-logo-slot">
+        <button
+          type="button"
+          className="bb-logo-slot"
+          onClick={() => {
+            if (sidebarCollapsed) return
+            setBouncing((b) => !b)
+          }}
+          tabIndex={sidebarCollapsed ? -1 : 0}
+          aria-hidden={sidebarCollapsed || undefined}
+        >
           <BrandLogo title={strings.sidebar.brandName} />
-        </span>
+        </button>
       </div>
 
       <ul className="bb-sidebar__nav">

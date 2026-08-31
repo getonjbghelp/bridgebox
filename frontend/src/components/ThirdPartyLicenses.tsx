@@ -5,6 +5,7 @@ import { Modal } from './Modal'
 import { Row } from './Section'
 import { CREDITS } from '../data/credits'
 import { useStrings } from '../lib/strings'
+import { useMotionPrefs } from '../state/MotionPrefsContext'
 import './ThirdPartyLicenses.css'
 
 /**
@@ -18,6 +19,7 @@ import './ThirdPartyLicenses.css'
  */
 export function ThirdPartyLicenses() {
   const strings = useStrings()
+  const { locale } = useMotionPrefs()
   const [open, setOpen] = useState(false)
 
   return (
@@ -56,7 +58,7 @@ export function ThirdPartyLicenses() {
                   >
                     {entry.author}
                   </a>
-                  <p className="text-caption bb-licenses__purpose">{entry.purpose}</p>
+                  <p className="text-caption bb-licenses__purpose">{entry.purpose[locale]}</p>
                 </li>
               ))}
             </ul>

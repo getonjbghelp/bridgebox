@@ -131,6 +131,116 @@ async def test_fetch_latest_release_refuses_an_unexpected_html_url_host():
         await app_update.fetch_latest_release(session)
 
 
+# ---- fetch_releases (changelog) --------------------------------------------
+
+
+async def test_fetch_releases_parses_the_list_newest_first():
+    session = _FakeSession(
+        [
+            {
+                "tag_name": "v0.1.6",
+                "name": "0.1.6",
+                "body": "«Faster warm-up» • MINOR",
+                "published_at": "2026-09-01T12:00:00Z",
+                "html_url": "https://github.com/getonjbghelp/bridgebox/releases/tag/v0.1.6",
+                "draft": False,
+            },
+            {
+                "tag_name": "v0.1.5",
+                "name": "0.1.5",
+                "body": "old body",
+                "published_at": "2026-08-28T09:00:00Z",
+                "html_url": "https://github.com/getonjbghelp/bridgebox/releases/tag/v0.1.5",
+                "draft": False,
+            },
+        ]
+    )
+
+    releases = await app_update.fetch_releases(session)
+
+    assert [r.version for r in releases] == ["0.1.6", "0.1.5"]
+    assert releases[0].body == "«Faster warm-up» • MINOR"
+    assert releases[0].date == "2026-09-01"
+
+
+async def test_fetch_releases_skips_drafts():
+    session = _FakeSession(
+        [
+            {
+                "tag_name": "v0.1.7",
+                "name": "0.1.7",
+                "body": "",
+                "published_at": "2026-09-05T00:00:00Z",
+                "html_url": "https://github.com/getonjbghelp/bridgebox/releases/tag/v0.1.7",
+                "draft": True,
+            }
+        ]
+    )
+
+    releases = await app_update.fetch_releases(session)
+
+    assert releases == []
+
+
+async def test_fetch_releases_keeps_prereleases():
+    """This app ships its normal betas as GitHub releases - excluding
+    prereleases would hide most of the actual changelog."""
+    session = _FakeSession(
+        [
+            {
+                "tag_name": "v0.1.5",
+                "name": "0.1.5 (b1)",
+                "body": "",
+                "published_at": "2026-08-28T09:00:00Z",
+                "html_url": "https://github.com/getonjbghelp/bridgebox/releases/tag/v0.1.5",
+                "draft": False,
+                "prerelease": True,
+            }
+        ]
+    )
+
+    releases = await app_update.fetch_releases(session)
+
+    assert len(releases) == 1
+
+
+async def test_fetch_releases_refuses_an_unexpected_html_url_host():
+    session = _FakeSession(
+        [
+            {
+                "tag_name": "v0.1.6",
+                "name": "0.1.6",
+                "body": "",
+                "published_at": "2026-09-01T00:00:00Z",
+                "html_url": "https://evil.example.com/releases/tag/v0.1.6",
+                "draft": False,
+            }
+        ]
+    )
+
+    with pytest.raises(ValueError):
+        await app_update.fetch_releases(session)
+
+
+async def test_fetch_releases_skips_an_entry_with_no_tag():
+    session = _FakeSession(
+        [
+            {
+                "tag_name": "",
+                "name": "untagged",
+                "body": "",
+                "published_at": "2026-09-01T00:00:00Z",
+                "html_url": "https://github.com/getonjbghelp/bridgebox/releases",
+                "draft": False,
+            }
+        ]
+    )
+
+    releases = await app_update.fetch_releases(session)
+
+    assert releases == []
+
+
 # ---- update asset discovery -------------------------------------------------
 
 

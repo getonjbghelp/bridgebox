@@ -111,16 +111,12 @@
    of the text as the width closes over it. */
 .bb-sidebar__item-label {
   white-space: nowrap;
-  transition: opacity var(--dur-base) var(--ease-standard);
-  /* Expanding: hold until the rail is wide enough that the label is not
-     revealed mid-word. Collapsing overrides this to leave immediately. */
-  transition-delay: 120ms;
+  transition: opacity var(--dur-slow) var(--ease-out);
+  transition-delay: 0ms;
 }
 
 .bb-sidebar[data-collapsed='true'] .bb-sidebar__item-label {
   opacity: 0;
-  transition-duration: var(--dur-fast);
-  transition-delay: 0ms;
 }
 
 /* 20px icon centred in the 40px content box wants a 10px inset; the item's

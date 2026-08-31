@@ -147,9 +147,18 @@
   overflow: hidden;
 }
 
-.bb-guide__gif-frame img {
+.bb-guide__gif-frame video {
   display: block;
   width: 100%;
+  /* All six clips are 1440x1080 - stated so the browser knows the frame's
+     true height before the video's own metadata has loaded, not just after.
+     Without this, the motion.div below measures height: 'auto' against
+     whatever height a <video> with no known size renders at (the UA default,
+     2:1) the instant it mounts - almost always before loadedmetadata fires -
+     so the reveal animated to that wrong, too-short height and then hard-
+     snapped to the real one the moment metadata arrived. Reserving the real
+     ratio up front means the first measurement already is the real one. */
+  aspect-ratio: 4 / 3;
   margin-top: var(--space-2);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);

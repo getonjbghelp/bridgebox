@@ -1,12 +1,21 @@
-"""Local editor for BridgeBox's data-driven content: the version history
-(frontend/src/data/content/changelog.json) shown from the Beta badge, and the
-"about" page (frontend/src/data/content/about.json) shown on the Info screen.
+"""Local editor for BridgeBox's data-driven content: the "about" page
+(frontend/src/data/content/about.json) shown on the Info screen, and the
+"Спасибо" people module (people.json).
+
+The version history used to live here too (changelog.json, hand-edited
+through a tab in this same tool) - it is now fetched straight from GitHub
+Releases at runtime instead (see frontend/src/lib/changelog.ts), because the
+"single BridgeBox source of truth" for a release's own notes is the release
+itself, not a second file someone has to remember to update in lockstep. What
+survives locally is legacyChangelog.json - the frozen pre-0.1.6 entries that
+predate the GitHub convention and were never going to gain new ones - kept as
+a plain static file, not something this tool edits any more.
 
 Run it, a browser tab opens - the same kind of tool as edit_ui_strings.py, and
-for the same reason: hand-editing two JSON files that have to stay
-internally consistent (version uniqueness, RU/EN in lockstep, a link's icon
-naming something that actually exists) is exactly the class of mistake a
-small local editor exists to catch before it ships.
+for the same reason: hand-editing JSON files that have to stay internally
+consistent (RU/EN in lockstep, a link's icon naming something that actually
+exists) is exactly the class of mistake a small local editor exists to catch
+before it ships.
 
     python tools/build_content.py
 
@@ -18,6 +27,7 @@ from __future__ import annotations
 
 import json
 import re
+import xml.etree.ElementTree as ET
 import sys
 import webbrowser
 from datetime import date
@@ -28,43 +38,18 @@ from urllib.parse import urlparse
 REPO_ROOT = Path(__file__).resolve().parent.parent
 FRONTEND_SRC = REPO_ROOT / "frontend" / "src"
 CONTENT_DIR = FRONTEND_SRC / "data" / "content"
-CHANGELOG_PATH = CONTENT_DIR / "changelog.json"
 ABOUT_PATH = CONTENT_DIR / "about.json"
 PEOPLE_PATH = CONTENT_DIR / "people.json"
 ICONS_PATH = FRONTEND_SRC / "components" / "icons.tsx"
 LOGO_PATH = FRONTEND_SRC / "components" / "BrandLogo.tsx"
-PYPROJECT_PATH = REPO_ROOT / "backend" / "pyproject.toml"
 
 LOCALES = ("ru", "en")
-LEVELS = ("minor", "major", "critical")
 PEOPLE_CATEGORIES = ("donators", "bughunters", "testers", "other")
 
-_PYPROJECT_VERSION_RE = re.compile(r'^\s*version\s*=\s*"([^"]+)"', re.MULTILINE)
-# Same two patterns backend/bridgebox/version.py derives the Beta badge's
-# label with. Vendored rather than imported: this script has to run with
-# nothing but the system's stdlib Python, not the backend's venv, and a
-# regex this small is cheaper to keep in sync by hand than to add an
-# import path workaround for.
-_PRERELEASE_RE = re.compile(r"(?:a|b|rc)\d+$")
-_VERSION_PART = re.compile(r"\d+")
 _VIEWBOX_RE = re.compile(r'viewBox="([\d.\s-]+)"')
 _PATH_D_RE = re.compile(r'd="(M[^"]+)"')
 _LINK_ICONS_RE = re.compile(r"export const LINK_ICONS = \{(.*?)\n\}", re.DOTALL)
 _ICON_KEY_RE = re.compile(r"(\w+):\s*Icon\w+")
-
-
-def suggested_version() -> str:
-    """The label a NEW changelog entry should probably use - "b1" from
-    pyproject's "0.1.0b1", same derivation as version.release_label(). Not
-    forced: a hotfix or backport might legitimately want a different one, so
-    the page shows this as a starting point, not a locked field."""
-    match = _PYPROJECT_VERSION_RE.search(PYPROJECT_PATH.read_text(encoding="utf-8"))
-    version_string = match.group(1) if match else ""
-    pre = _PRERELEASE_RE.search(version_string)
-    if pre:
-        return pre.group(0)
-    parts = _VERSION_PART.findall(version_string)
-    return ".".join(parts[:2]) if len(parts) >= 2 else version_string
 
 
 def known_icons() -> list[str]:
@@ -99,7 +84,6 @@ def read_wordmark() -> str:
 
 
 def load_content() -> dict:
-    changelog = json.loads(CHANGELOG_PATH.read_text(encoding="utf-8"))
     about = json.loads(ABOUT_PATH.read_text(encoding="utf-8"))
     if PEOPLE_PATH.exists():
         people = json.loads(PEOPLE_PATH.read_text(encoding="utf-8"))
@@ -107,17 +91,16 @@ def load_content() -> dict:
         # A checkout from before this file existed - start empty rather than
         # making the whole editor refuse to run over one missing category.
         people = {category: [] for category in PEOPLE_CATEGORIES}
-    return {"changelog": changelog, "about": about, "people": people}
+    return {"about": about, "people": people}
 
 
 def build_meta() -> dict:
     return {
-        "suggestedVersion": suggested_version(),
-        "today": date.today().isoformat(),
         "knownIcons": known_icons(),
-        "levels": list(LEVELS),
     }
 
+
+SVG_NS = "http://www.w3.org/2000/svg"
 
 _SVG_SCRIPT_RE = re.compile(r"<script", re.IGNORECASE)
 _SVG_EVENT_ATTR_RE = re.compile(r"\son\w+\s*=", re.IGNORECASE)
@@ -140,6 +123,54 @@ def _is_safe_svg(markup: str) -> bool:
     return True
 
 
+def strip_svg_filters(markup: str) -> str:
+    """Drop SVG filter effects from an icon, and the elements that use them.
+
+    These icons render at 18px on the Info screen, where a Gaussian blur is
+    somewhere under two pixels wide and an offset drop shadow under one - both
+    invisible. The rasteriser still does the work, and the cost is not small:
+    the Donatty icon shipped with two filter chains (a blurred glow and a
+    four-stage feOffset/feGaussianBlur/feComposite/feColorMatrix shadow) over
+    a path drawn three times, and a motion trace of the real app pinned the
+    Info screen's first paint at a 200ms frame - with the renderer's own main
+    thread idle the whole time, because filter rasterisation does not happen
+    there. Every other screen, including one with twice the pixel area and
+    more elements, painted clean. Filters were the only thing that set this
+    screen apart.
+
+    The elements that reference a filter go with it rather than just losing
+    the attribute: an unfiltered copy of a shape that only existed to be
+    blurred is not a neutral leftover, it is a hard-edged duplicate drawn over
+    the real one (the black shadow layer here would render as a solid
+    silhouette). What stays is what was actually visible at icon size."""
+    try:
+        ET.register_namespace("", SVG_NS)
+        root = ET.fromstring(markup)
+    except ET.ParseError:
+        # Not parseable as XML - leave it exactly as the author wrote it and
+        # let _is_safe_svg be the only gate, same as before this existed.
+        return markup
+
+    removed = 0
+    for parent in root.iter():
+        for child in list(parent):
+            uses_filter = "url(#" in (child.get("filter") or "")
+            if child.tag == f"{{{SVG_NS}}}filter" or uses_filter:
+                parent.remove(child)
+                removed += 1
+    if removed == 0:
+        return markup
+
+    drawable = {"path", "use", "rect", "circle", "ellipse", "polygon", "polyline", "line", "text"}
+    if not any(el.tag.split("}")[-1] in drawable for el in root.iter()):
+        raise ValueError(
+            "после удаления фильтров в иконке не осталось ничего видимого - "
+            "перерисуйте её без filter/feGaussianBlur"
+        )
+
+    return ET.tostring(root, encoding="unicode")
+
+
 def _is_valid_url(value: str) -> bool:
     try:
         parsed = urlparse(value)
@@ -148,43 +179,6 @@ def _is_valid_url(value: str) -> bool:
     if parsed.scheme == "mailto":
         return bool(parsed.path)
     return parsed.scheme in ("http", "https") and bool(parsed.netloc)
-
-
-def validate_changelog(entries: object) -> list[dict]:
-    if not isinstance(entries, list):
-        raise ValueError("история версий должна быть списком")
-
-    seen_versions: set[str] = set()
-    for i, entry in enumerate(entries):
-        if not isinstance(entry, dict):
-            raise ValueError(f"запись {i + 1}: должна быть объектом")
-        version = entry.get("version")
-        if not isinstance(version, str) or not version.strip():
-            raise ValueError(f"запись {i + 1}: версия не может быть пустой")
-        if version in seen_versions:
-            raise ValueError(f"версия {version!r} повторяется")
-        seen_versions.add(version)
-
-        entry_date = entry.get("date")
-        if not isinstance(entry_date, str):
-            raise ValueError(f"{version}: дата обязательна")
-        try:
-            date.fromisoformat(entry_date)
-        except ValueError:
-            raise ValueError(f"{version}: дата {entry_date!r} не в формате ГГГГ-ММ-ДД") from None
-
-        if entry.get("level") not in LEVELS:
-            raise ValueError(f"{version}: level должен быть одним из {', '.join(LEVELS)}")
-
-        for locale in LOCALES:
-            text = entry.get(locale)
-            if not isinstance(text, dict):
-                raise ValueError(f"{version}: раздел {locale!r} обязателен")
-            if not isinstance(text.get("title"), str) or not text["title"].strip():
-                raise ValueError(f"{version} ({locale}): заголовок не может быть пустым")
-            if not isinstance(text.get("body"), str) or not text["body"].strip():
-                raise ValueError(f"{version} ({locale}): тело записи не может быть пустым")
-    return entries
 
 
 def validate_about(data: object) -> dict:
@@ -227,6 +221,9 @@ def validate_about(data: object) -> dict:
                     f"{link_id}: iconSvg должен начинаться с <svg и не содержать "
                     f"<script> или обработчики событий (onXxx=)"
                 )
+            # Rewritten in place, so what lands in about.json is what the
+            # Info screen will actually paint - see strip_svg_filters.
+            link["iconSvg"] = strip_svg_filters(svg)
         elif icon not in icons:
             raise ValueError(
                 f"{link_id}: иконка {icon!r} не найдена в icons.tsx и не 'custom' "
@@ -375,11 +372,6 @@ def _atomic_write(path: Path, data: object) -> None:
     tmp = path.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     tmp.replace(path)
-
-
-def save_changelog(entries: object) -> None:
-    validated = validate_changelog(entries)
-    _atomic_write(CHANGELOG_PATH, validated)
 
 
 def save_about(data: object) -> None:
@@ -560,22 +552,14 @@ PAGE_TEMPLATE = r"""<!doctype html>
 <header>
   <div class="brand">__WORDMARK__<h1>Контент</h1></div>
   <div class="tabs">
-    <button class="tab active" data-panel="changelog">История версий</button>
-    <button class="tab" data-panel="about">О программе</button>
+    <button class="tab active" data-panel="about">О программе</button>
     <button class="tab" data-panel="people">Благодарности</button>
   </div>
   <span id="status"></span>
 </header>
 <main>
-  <section id="panel-changelog" class="panel active">
-    <p class="hint">Новые версии добавляются сверху. Версия по умолчанию — <code id="suggested-version"></code>, взято из pyproject.toml; при желании можно вписать другую (например, для хотфикса).</p>
-    <button class="primary" id="add-entry">Добавить версию</button>
-    <div id="entries"></div>
-    <button class="primary save-bar" id="save-changelog">Сохранить историю версий</button>
-    <p class="problem" id="changelog-problem" hidden></p>
-  </section>
 
-  <section id="panel-about" class="panel">
+  <section id="panel-about" class="panel active">
     <div class="card">
       <div class="card-head"><strong>Описание и лицензия</strong></div>
       <div class="row-pair">
@@ -660,7 +644,6 @@ PAGE_TEMPLATE = r"""<!doctype html>
 <script>
 const CONTENT = __CONTENT_JSON__;
 const META = __META_JSON__;
-document.getElementById('suggested-version').textContent = META.suggestedVersion;
 
 // ---- tabs -------------------------------------------------------------
 document.querySelectorAll('.tab').forEach((tab) => {
@@ -677,102 +660,6 @@ function setStatus(text, cls) {
   el.textContent = text;
   el.className = cls || '';
 }
-
-// ---- changelog ----------------------------------------------------------
-
-const entriesEl = document.getElementById('entries');
-
-function entryCard(entry, index) {
-  const card = document.createElement('div');
-  card.className = 'card';
-  card.dataset.index = index;
-  card.innerHTML = `
-    <div class="card-head">
-      <span class="badge badge--${entry.level}">${entry.level}</span>
-      <button class="ghost remove-entry" type="button">Удалить</button>
-    </div>
-    <div class="row"><label>Версия</label><input class="f-version" value="${esc(entry.version)}"></div>
-    <div class="row"><label>Дата</label><input class="f-date" type="date" value="${esc(entry.date)}"></div>
-    <div class="row"><label>Важность</label>
-      <select class="f-level">
-        ${META.levels.map((l) => `<option value="${l}"${l === entry.level ? ' selected' : ''}>${l}</option>`).join('')}
-      </select>
-    </div>
-    <div class="row-pair">
-      <div>
-        <span class="lang-tag">RU — заголовок</span><input class="f-ru-title" value="${esc(entry.ru.title)}">
-        <span class="lang-tag" style="margin-top:14px">RU — текст (- список, **жирный**, \`код\`)</span>
-        <textarea class="tall f-ru-body">${esc(entry.ru.body)}</textarea>
-      </div>
-      <div>
-        <span class="lang-tag">EN — title</span><input class="f-en-title" value="${esc(entry.en.title)}">
-        <span class="lang-tag" style="margin-top:14px">EN — body</span>
-        <textarea class="tall f-en-body">${esc(entry.en.body)}</textarea>
-      </div>
-    </div>
-  `;
-  card.querySelector('.f-level').addEventListener('change', (e) => {
-    card.querySelector('.badge').className = 'badge badge--' + e.target.value;
-  });
-  card.querySelector('.remove-entry').addEventListener('click', () => {
-    if (confirm('Удалить запись ' + entry.version + '?')) card.remove();
-  });
-  return card;
-}
-
-function renderEntries() {
-  entriesEl.innerHTML = '';
-  CONTENT.changelog.forEach((entry, i) => entriesEl.appendChild(entryCard(entry, i)));
-}
-renderEntries();
-
-document.getElementById('add-entry').addEventListener('click', () => {
-  const fresh = {
-    version: META.suggestedVersion,
-    date: META.today,
-    level: 'minor',
-    ru: { title: '', body: '' },
-    en: { title: '', body: '' },
-  };
-  entriesEl.insertBefore(entryCard(fresh, 0), entriesEl.firstChild);
-});
-
-function collectChangelog() {
-  return [...entriesEl.querySelectorAll('.card')].map((card) => ({
-    version: card.querySelector('.f-version').value.trim(),
-    date: card.querySelector('.f-date').value,
-    level: card.querySelector('.f-level').value,
-    ru: {
-      title: card.querySelector('.f-ru-title').value.trim(),
-      body: card.querySelector('.f-ru-body').value,
-    },
-    en: {
-      title: card.querySelector('.f-en-title').value.trim(),
-      body: card.querySelector('.f-en-body').value,
-    },
-  }));
-}
-
-document.getElementById('save-changelog').addEventListener('click', async () => {
-  const problemEl = document.getElementById('changelog-problem');
-  problemEl.hidden = true;
-  setStatus('Сохраняем…');
-  try {
-    const res = await fetch('/api/changelog', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(collectChangelog()),
-    });
-    const body = await res.json();
-    if (!res.ok || !body.ok) throw new Error(body.error || res.statusText);
-    setStatus('Сохранено ✓', 'ok');
-    location.reload();
-  } catch (err) {
-    setStatus('Ошибка', 'err');
-    problemEl.hidden = false;
-    problemEl.textContent = err.message;
-  }
-});
 
 // ---- about ----------------------------------------------------------------
 
@@ -1168,9 +1055,7 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_POST(self) -> None:
-        if self.path == "/api/changelog":
-            self._handle_save(save_changelog)
-        elif self.path == "/api/about":
+        if self.path == "/api/about":
             self._handle_save(save_about)
         elif self.path == "/api/people":
             self._handle_save(save_people)
@@ -1191,7 +1076,7 @@ class QuietHTTPServer(HTTPServer):
 
 
 def main() -> None:
-    missing = [str(p) for p in (CHANGELOG_PATH, ABOUT_PATH, ICONS_PATH) if not p.exists()]
+    missing = [str(p) for p in (ABOUT_PATH, ICONS_PATH) if not p.exists()]
     if missing:
         raise SystemExit("Не найдены: " + ", ".join(missing))
 

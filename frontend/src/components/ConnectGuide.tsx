@@ -100,16 +100,16 @@ function SteamGuide({ launchOption }: { launchOption: string }) {
         <li>{strings.home.steamStep1}</li>
         <li>
           {strings.home.steamStep2}
-          <GifToggle name="gif_steam_step2" />
+          <GifToggle name="vid_steam_step2" />
         </li>
         <li>
           {strings.home.steamStep3}
           <CodeRow value={launchOption} />
-          <GifToggle name="gif_steam_step3" />
+          <GifToggle name="vid_steam_step3" />
         </li>
         <li>
           {strings.home.steamStep4}
-          <GifToggle name="gif_steam_stepfinal" />
+          <GifToggle name="vid_steam_stepfinal" />
         </li>
         <li>{strings.home.steamStep5}</li>
       </ol>
@@ -130,16 +130,16 @@ function OtherGuide({ launchOption, address }: { launchOption: string; address: 
         <li>{strings.home.otherWay1Step1}</li>
         <li>
           {strings.home.otherWay1Step2}
-          <GifToggle name="gif_other_step2" />
+          <GifToggle name="vid_other_step2" />
         </li>
         <li>
           {strings.home.otherWay1Step3}
           <CodeRow value={launchOption} />
-          <GifToggle name="gif_other_step3" />
+          <GifToggle name="vid_other_step3" />
         </li>
         <li>
           {strings.home.otherWay1Step4}
-          <GifToggle name="gif_other_finalstep" />
+          <GifToggle name="vid_other_stepfinal" />
         </li>
         <li>{strings.home.otherWay1Step5}</li>
       </ol>
@@ -184,7 +184,11 @@ function CodeRow({ value }: { value: string }) {
   )
 }
 
-/** A step's animation, fetched only once the reader asks for it. */
+/** A step's animation, fetched only once the reader asks for it.
+ *  mp4, not the original gif: same crf-28 h264 encode, visually identical,
+ *  1/60th the size (35MB -> 0.57MB across all six) - a gif has no
+ *  interframe prediction, so a screen-recording-style clip like these is
+ *  the exact case that costs the most in that format. */
 function GifToggle({ name }: { name: string }) {
   const strings = useStrings()
   const [open, setOpen] = useState(false)
@@ -207,7 +211,13 @@ function GifToggle({ name }: { name: string }) {
             exit={{ opacity: 0, height: 0 }}
             transition={transition}
           >
-            <img src={`instructions/${name}.gif`} alt="" loading="lazy" />
+            <video
+              src={`instructions/${name}.mp4`}
+              autoPlay
+              loop
+              muted
+              playsInline
+            />
           </motion.div>
         )}
       </AnimatePresence>

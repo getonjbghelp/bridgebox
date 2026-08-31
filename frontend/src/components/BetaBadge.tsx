@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Button } from './Button'
 import { Modal } from './Modal'
-import { CHANGELOG, changelogText, type ChangeLevel } from '../lib/content'
+import { Spinner } from './Spinner'
+import { LEGACY_CHANGELOG, changelogText, type ChangeLevel, type ChangelogEntry } from '../lib/content'
+import { fetchChangelog } from '../lib/changelog'
 import { useSpringTransition } from '../lib/motion'
 import { renderChangelogBody } from '../lib/richText'
 import { useStrings, t } from '../lib/strings'
@@ -43,8 +45,33 @@ export function BetaBadge() {
   const [info, setInfo] = useState<AppInfo | null>(null)
   const [open, setOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
+  // null: not fetched yet. Fetched once per mount, on first open, not eagerly
+  // on mount - most sessions never open this panel at all, and the fetch
+  // that would buy is a GitHub round trip nobody asked for.
+  const [entries, setEntries] = useState<ChangelogEntry[] | null>(null)
+  const [historyError, setHistoryError] = useState(false)
   const closeTimer = useRef<number | undefined>(undefined)
   const transition = useSpringTransition()
+
+  useEffect(() => {
+    if (!historyOpen || entries !== null) return
+    let cancelled = false
+    fetchChangelog()
+      .then((result) => {
+        if (!cancelled) setEntries(result)
+      })
+      .catch(() => {
+        // The legacy block alone beats an empty modal - a release GitHub
+        // cannot be reached for is still a release the app remembers.
+        if (!cancelled) {
+          setHistoryError(true)
+          setEntries(LEGACY_CHANGELOG)
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [historyOpen, entries])
 
   const cancelClose = () => {
     if (closeTimer.current !== undefined) {
@@ -131,27 +158,37 @@ export function BetaBadge() {
             onClose={() => setHistoryOpen(false)}
             maxWidth={560}
           >
-            <ol className="bb-changelog">
-              {CHANGELOG.map((entry) => {
-                const text = changelogText(entry, locale)
-                return (
-                  <li key={entry.version} className="bb-changelog__entry">
-                    <div className="bb-changelog__head">
-                      <span className="text-subtitle">{text.title}</span>
-                      <span className={`bb-changelog__badge bb-changelog__badge--${entry.level}`}>
-                        {levelLabel(entry.level, strings)}
-                      </span>
-                    </div>
-                    <p className="text-caption bb-changelog__meta">
-                      <span className="text-mono">{entry.version}</span>
-                      {' · '}
-                      {formatDate(entry.date, locale)}
-                    </p>
-                    <div className="bb-changelog__body bb-prose">{renderChangelogBody(text.body)}</div>
-                  </li>
-                )
-              })}
-            </ol>
+            {entries === null ? (
+              <p className="bb-changelog__status">
+                <Spinner size={16} />
+                {strings.home.changelogLoading}
+              </p>
+            ) : (
+              <>
+                {historyError && <p className="bb-changelog__status bb-changelog__status--error">{strings.home.changelogError}</p>}
+                <ol className="bb-changelog">
+                  {entries.map((entry) => {
+                    const text = changelogText(entry, locale)
+                    return (
+                      <li key={entry.version} className="bb-changelog__entry">
+                        <div className="bb-changelog__head">
+                          <span className="text-subtitle">{text.title}</span>
+                          <span className={`bb-changelog__badge bb-changelog__badge--${entry.level}`}>
+                            {levelLabel(entry.level, strings)}
+                          </span>
+                        </div>
+                        <p className="text-caption bb-changelog__meta">
+                          <span className="text-mono">{entry.version}</span>
+                          {' · '}
+                          {formatDate(entry.date, locale)}
+                        </p>
+                        <div className="bb-changelog__body bb-prose">{renderChangelogBody(text.body)}</div>
+                      </li>
+                    )
+                  })}
+                </ol>
+              </>
+            )}
           </Modal>
         )}
       </AnimatePresence>

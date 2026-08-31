@@ -270,3 +270,39 @@ def test_the_file_list_is_capped(tmp_path: Path):
 
     assert report.total == 30
     assert len(report.as_dict()["added"]) <= 20
+
+
+def test_hashing_yields_between_files_when_asked(tmp_path: Path, monkeypatch):
+    """The startup check runs while the user is clicking around a window that
+    has only just appeared. Hashing the whole install flat out is what made
+    frames take 220ms there with nothing on the main thread to blame - so the
+    one caller that runs at startup asks for pauses, and they have to actually
+    happen."""
+    root = tmp_path
+    for index in range(10):
+        (root / f"zapret").mkdir(exist_ok=True)
+        (root / "zapret" / f"f{index}.exe").write_bytes(b"x" * 16)
+
+    pauses: list[float] = []
+    monkeypatch.setattr(integrity.time, "sleep", lambda s: pauses.append(s))
+
+    integrity.build_manifest(root, yield_every=3)
+
+    assert pauses, "no pause was taken while hashing"
+    assert all(p == integrity._YIELD_PAUSE_S for p in pauses)
+
+
+def test_hashing_does_not_pause_by_default(tmp_path: Path, monkeypatch):
+    """Everything except the startup check - a build script, a test, the
+    re-baseline after a hostlist edit - wants this to finish as fast as it
+    can, so the pause is opt-in."""
+    (tmp_path / "zapret").mkdir()
+    for index in range(10):
+        (tmp_path / "zapret" / f"f{index}.exe").write_bytes(b"x" * 16)
+
+    pauses: list[float] = []
+    monkeypatch.setattr(integrity.time, "sleep", lambda s: pauses.append(s))
+
+    integrity.build_manifest(tmp_path)
+
+    assert pauses == []

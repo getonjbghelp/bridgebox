@@ -340,15 +340,15 @@ export function IconMegaphone({ size = 20 }: IconProps) {
 
 export function IconFormDocument({ size = 18 }: IconProps) {
   return (
-    <svg width={size} height={size} viewBox="0 0 20 20" fill="none" aria-hidden="true">
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path
-        d="M5 2.5h7l4 4v10.2a.8.8 0 0 1-.8.8H5a.8.8 0 0 1-.8-.8V3.3c0-.4.4-.8.8-.8Z"
+        d="M6.5 2.75h7.15l4.1 4.1V20a1.25 1.25 0 0 1-1.25 1.25H6.5A1.25 1.25 0 0 1 5.25 20V4A1.25 1.25 0 0 1 6.5 2.75Z"
         stroke="currentColor"
-        strokeWidth="1.4"
+        strokeWidth="1.6"
         strokeLinejoin="round"
       />
-      <path d="M12 2.5V6a.8.8 0 0 0 .8.8H16.5" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
-      <path d="M6.5 11h7M6.5 13.5h7M6.5 16h4.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+      <path d="M13.5 2.9v3.25c0 .55.45 1 1 1h3.1" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+      <path d="M8.5 12h7M8.5 15h7M8.5 18h4.4" stroke="currentColor" strokeWidth="1.45" strokeLinecap="round" />
     </svg>
   )
 }

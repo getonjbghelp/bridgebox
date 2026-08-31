@@ -84,3 +84,12 @@
 :root[data-animations='off'] .bb-app__screen[data-active='true'] {
   animation: none;
 }
+
+/* The OS-level preference, which the in-app toggle above does not mirror -
+   someone who has asked Windows for less motion should not have to find a
+   setting to be taken at their word. */
+@media (prefers-reduced-motion: reduce) {
+  .bb-app__screen[data-active='true'] {
+    animation: none;
+  }
+}

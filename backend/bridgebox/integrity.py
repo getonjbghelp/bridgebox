@@ -30,6 +30,7 @@ import hashlib
 import json
 import logging
 import sys
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -37,6 +38,10 @@ logger = logging.getLogger(__name__)
 
 MANIFEST_NAME = "baseline.json"
 MANIFEST_VERSION = 1
+
+# Long enough to actually hand the disk and a core back, short enough that
+# a few hundred files still finish in well under a second of added wall time.
+_YIELD_PAUSE_S = 0.002
 
 # Zapret's own files are watched the same way whichever kind of install this
 # is - the portable exe and a source checkout both keep a real, loose zapret/
@@ -113,16 +118,32 @@ def watched_files(root: Path) -> list[Path]:
     return sorted(found)
 
 
-def build_manifest(root: Path) -> dict:
+def build_manifest(root: Path, *, yield_every: int = 0) -> dict:
+    """Hash every watched file.
+
+    `yield_every` inserts a short sleep after that many files. It exists for
+    exactly one caller - the startup check on its background thread - and the
+    reason is measurable: this loop reads and digests the whole install, which
+    in a portable build is the executable plus all of _internal, and it does so
+    flat out. A trace of the window during those seconds shows frames taking
+    220ms with the renderer's own main thread idle and no script running: the
+    UI was not busy, it just could not get a frame presented while this had the
+    disk. Sleeping briefly hands the disk and a core back often enough for the
+    compositor to keep up. Left at 0 everywhere else, since a build script or a
+    test wants this to finish as fast as it can."""
     root = Path(root)
     files = {}
-    for relative in watched_files(root):
+    for index, relative in enumerate(watched_files(root), start=1):
         try:
             files[relative.as_posix()] = _digest(root / relative)
         except OSError as exc:
             # A file we cannot read is not a file we can vouch for, but it is
             # also not worth refusing to start over.
             logger.warning("could not hash %s: %s", relative, exc)
+        if yield_every and index % yield_every == 0:
+            # Not sleep(0): on CPython that does not reliably give up the GIL,
+            # and the point here is to actually stop for a moment.
+            time.sleep(_YIELD_PAUSE_S)
     return {"version": MANIFEST_VERSION, "files": files}
 
 
@@ -227,8 +248,10 @@ def write_manifest(root: Path) -> bool:
     return True
 
 
-def verify(root: Path) -> IntegrityReport:
-    """Compare the tree against the baseline. Never raises."""
+def verify(root: Path, *, yield_every: int = 0) -> IntegrityReport:
+    """Compare the tree against the baseline. Never raises.
+
+    `yield_every` is handed straight to build_manifest - see there."""
     root = Path(root)
     try:
         baseline = read_manifest(root)
@@ -236,7 +259,7 @@ def verify(root: Path) -> IntegrityReport:
             return IntegrityReport(verified=False, baseline_missing=True)
 
         recorded: dict[str, str] = baseline["files"]
-        current = build_manifest(root)["files"]
+        current = build_manifest(root, yield_every=yield_every)["files"]
 
         changed = sorted(
             name for name, digest in recorded.items()
@@ -263,12 +286,12 @@ def verify(root: Path) -> IntegrityReport:
     return report
 
 
-def ensure_baseline(root: Path) -> IntegrityReport:
+def ensure_baseline(root: Path, *, yield_every: int = 0) -> IntegrityReport:
     """Verify, recording a baseline first if there is none.
 
     The trust-on-first-use step. Called once at startup; the report it returns
     is what the banner reads."""
-    report = verify(root)
+    report = verify(root, yield_every=yield_every)
     if report.baseline_missing:
         write_manifest(root)
         # Deliberately reported as verified rather than re-hashing: the

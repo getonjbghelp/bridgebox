@@ -44,9 +44,12 @@ function renderBold(text: string): ReactNode {
 }
 
 /**
- * A changelog body: blank-line-separated paragraphs, with runs of "- " lines
- * collected into a list. Deliberately not a markdown library - this is the
- * only place in the app that needs more than inline code, and the whole
+ * Line-separated paragraphs, with runs of "- " lines collected into a list -
+ * originally written for the changelog body, also used by InfoScreen's link
+ * popups (about.json's popupText, which needs its own paragraph per crypto
+ * address rather than one run-on line - renderRich alone has no concept of a
+ * line break, so newlines in the JSON just vanished into HTML's normal
+ * whitespace collapsing). Deliberately not a markdown library - the whole
  * grammar is three rules.
  */
 export function renderChangelogBody(text: string): ReactNode {

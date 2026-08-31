@@ -59,6 +59,42 @@ class AppUpdateMixin:
                 "updateAvailable": False,
             }
 
+    async def _changelog_coro(self) -> dict:
+        try:
+            async with aiohttp.ClientSession() as session:
+                releases = await app_update.fetch_releases(session)
+        except Exception as exc:
+            return {"ok": False, "error": describe_exception(exc), "releases": []}
+
+        return {
+            "ok": True,
+            "error": None,
+            "releases": [
+                {
+                    "version": r.version,
+                    "name": r.name,
+                    "body": r.body,
+                    "date": r.date,
+                    "htmlUrl": r.html_url,
+                }
+                for r in releases
+            ],
+        }
+
+    def changelog(self) -> dict:
+        """The Info screen's "История версий" - GitHub's release list, raw.
+
+        Bilingual title/level parsing (the "«Название» • MINOR/MAJOR/CRITICAL"
+        convention, see lib/content.ts on the frontend) and the pre-0.1.6
+        local fallback both live in the frontend, next to the RU/EN body
+        splitting it already owned (lib/releaseNotes.ts) - this stays a plain
+        fetch, same division of labour as check_app_update/_check_app_update_coro
+        above."""
+        try:
+            return self._runtime.run(self._changelog_coro, timeout=25)
+        except Exception as exc:
+            return {"ok": False, "error": describe_exception(exc), "releases": []}
+
     def start_app_update_check(self) -> None:
         """Fire the background release check, if AppUpdateConfig.
         check_on_startup is on. Off by default (see AppUpdateConfig) - a

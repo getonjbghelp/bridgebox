@@ -101,6 +101,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  height: 50px;
 }
 
 /* The animated box: no padding or border of its own, so the width framer

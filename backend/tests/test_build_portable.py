@@ -8,7 +8,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
+TOOLS_DIR = Path(__file__).resolve().parents[2] / "tools"
+sys.path.insert(0, str(TOOLS_DIR))
 
 from build_portable import version_tuple  # noqa: E402
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useState } from 'react'
 import { ClosingOverlay } from './components/ClosingOverlay'
 import { IntegrityBanner } from './components/IntegrityBanner'
 import { AppUpdateBanner } from './components/AppUpdateBanner'
@@ -9,6 +9,8 @@ import { LogsScreen } from './screens/LogsScreen'
 import { InfoScreen } from './screens/InfoScreen'
 import { SetupWizard } from './screens/SetupWizard'
 import { useMotionPrefs } from './state/MotionPrefsContext'
+// ponytail: diagnostic build only - see lib/motionTrace.ts.
+import { traceMark } from './lib/motionTrace'
 import './App.css'
 
 export type Screen = 'home' | 'settings' | 'logs' | 'info'
@@ -24,6 +26,18 @@ function App() {
   const [prewarming, setPrewarming] = useState(false)
   const { setupComplete } = useMotionPrefs()
 
+  // The instant a screen swap hits the DOM. useLayoutEffect runs after the
+  // mutation but BEFORE the browser paints, which is exactly when
+  // bb-screen-in's clock starts - so this is the reference point every
+  // 'how much of the animation was actually drawn' number is measured from.
+  useLayoutEffect(() => {
+    traceMark('react commit: screen=' + screen)
+  }, [screen])
+
+  useEffect(() => {
+    traceMark('setupComplete=' + String(setupComplete))
+  }, [setupComplete])
+
   // Take the boot skeleton down, but only once there is something behind it.
   //
   // index.html paints that skeleton before the bundle is even fetched, which
@@ -36,6 +50,7 @@ function App() {
     // #root itself crossfades in under the skeleton (see index.html's
     // #root.bb-root--visible) - toggled in the same effect, not a separate
     // one, so the two fades start on the same frame rather than racing.
+    traceMark('boot crossfade start')
     document.getElementById('root')?.classList.add('bb-root--visible')
     const boot = document.getElementById('bb-boot')
     if (!boot) return
@@ -43,7 +58,10 @@ function App() {
     // Matches index.html's #bb-boot.bb-boot--done transition (500ms) plus a
     // small margin - removing the node before its own fade finishes would
     // cut the crossfade short instead of letting it complete.
-    const id = window.setTimeout(() => boot.remove(), 520)
+    const id = window.setTimeout(() => {
+      traceMark('boot skeleton removed')
+      boot.remove()
+    }, 520)
     return () => window.clearTimeout(id)
   }, [setupComplete])
 
@@ -73,10 +91,14 @@ function App() {
     if (setupComplete === null) return
     let stopId: number | undefined
     const startId = window.setTimeout(() => {
+      traceMark('prewarm on')
       setPrewarming(true)
       // Two frames is enough for style, layout and paint to have run; this
       // timeout is only a floor on that, not a guess at how long it takes.
-      stopId = window.setTimeout(() => setPrewarming(false), 500)
+      stopId = window.setTimeout(() => {
+        traceMark('prewarm off')
+        setPrewarming(false)
+      }, 500)
     }, 520)
     return () => {
       window.clearTimeout(startId)

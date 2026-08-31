@@ -21,7 +21,7 @@ from .api.profiles import ProfilesMixin
 from .api.steam_launch import SteamLaunchMixin
 from .api.app_update import AppUpdateMixin
 from .api.diagnostics import DiagnosticsMixin
-from .api.system import SystemMixin
+from .api.system import STARTUP_INTEGRITY_DELAY_S, SystemMixin
 from .api.zapret import ZapretMixin
 from .config import Config, load_config, migrate_config_file, save_config
 from .diagnostics import describe_exception
@@ -157,6 +157,15 @@ class Api(
         # Injectable so tests don't pay the real delay - see
         # STARTUP_NETWORK_CHECK_DELAY_S and start_startup_update_check.
         startup_check_delay_s: float = STARTUP_NETWORK_CHECK_DELAY_S,
+        # Same reason as above - see api/system.py's own constant for why
+        # the real one is as long as it is.
+        integrity_delay_s: float = STARTUP_INTEGRITY_DELAY_S,
+        # --tracer on the command line. Off by default: the tracer is a
+        # permanent rAF loop plus an 8ms sampling timer (see
+        # frontend/src/lib/motionTrace.ts), fine to carry in every build but
+        # not something to run unless someone is actually diagnosing a
+        # motion bug with it.
+        tracer_enabled: bool = False,
     ):
         self._runtime = runtime
         self._runtime_core = runtime_core
@@ -165,6 +174,8 @@ class Api(
         self._project_root = project_root
         self._log_buffer = log_buffer
         self._startup_check_delay_s = startup_check_delay_s
+        self._integrity_delay_s = integrity_delay_s
+        self._tracer_enabled = tracer_enabled
         # Strategy-suite job state, polled by test_strategies_progress().
         self._strategy_future = None
         self._strategy_results: list[dict] = []
@@ -273,6 +284,14 @@ class Api(
             return {"ok": True, "error": None, **self._runtime.get_status()}
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
+
+    def tracer_enabled(self) -> bool:
+        """Whether the app was launched with --tracer.
+
+        main.tsx asks this before installing the motion tracer - see its own
+        docstring for what the tracer is and why it stays out of the way
+        unless someone specifically asked for it."""
+        return self._tracer_enabled
 
     # ---- config ----
 
@@ -535,6 +554,7 @@ def main(
         project_root=PROJECT_ROOT,
         log_buffer=log_buffer,
         startup_check_delay_s=startup_check_delay_s,
+        tracer_enabled="--tracer" in sys.argv,
     )
     dev_mode = "--dev" in sys.argv
     if dev_mode:

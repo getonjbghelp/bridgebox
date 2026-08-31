@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 
 from .. import integrity
 from ..autostart import disable as disable_autostart
@@ -13,6 +14,24 @@ from ..diagnostics import describe_exception
 from ..window_chrome import THEMED_NONE, apply_titlebar_theme
 
 logger = logging.getLogger(__name__)
+
+# How long to leave the UI alone before starting to hash. The window fires
+# `shown` before it has drawn much of anything, and the first seconds after
+# that are when the user is clicking around the tabs for the first time -
+# exactly when a motion trace showed frames taking 220ms with the renderer's
+# own main thread idle and no script running. Nothing was computing the new
+# screen; it just could not get a frame presented. Every screen switch after
+# the first few seconds, including the first ever display of Settings 79
+# seconds in, was clean - so what mattered was WHEN, not which screen.
+# Nobody is waiting on this result: it feeds a banner about a warning that
+# cannot be acted on instantly anyway.
+STARTUP_INTEGRITY_DELAY_S = 10
+
+# Sleep briefly every this many files while hashing - see
+# integrity.build_manifest's yield_every. The delay above keeps this off the
+# first interactions; this keeps it from monopolising the disk whenever it
+# does run, including on a restore from the tray.
+INTEGRITY_YIELD_EVERY = 25
 
 
 class SystemMixin:
@@ -114,17 +133,30 @@ class SystemMixin:
             return {"ok": False, "error": describe_exception(exc), "config": None}
 
     def start_integrity_check(self) -> None:
-        """Hash our own files once, in the background.
+        """Hash our own files once, in the background, out of the UI's way.
 
         A thread, not the event loop: this is blocking disk I/O over a few
-        hundred files, and the loop serves every other Api call. Nothing waits
-        for it - the banner simply appears a moment after the window does,
-        which is the right order for a warning nobody can act on instantly."""
+        hundred files, and the loop serves every other Api call.
+
+        It also waits before it starts and yields while it runs, both for the
+        same reason - see STARTUP_INTEGRITY_DELAY_S. The timing is logged
+        because the reasoning behind those two numbers is a measurement, and a
+        measurement that cannot be checked again later is one that rots."""
         if self._integrity is not None:
             return  # `shown` fires again on every restore from the tray
 
         def run() -> None:
-            self._integrity = integrity.ensure_baseline(self._project_root)
+            time.sleep(self._integrity_delay_s)
+            started = time.monotonic()
+            report = integrity.ensure_baseline(
+                self._project_root, yield_every=INTEGRITY_YIELD_EVERY
+            )
+            logger.info(
+                "integrity check finished in %.2fs (started %.1fs after the window appeared)",
+                time.monotonic() - started,
+                self._integrity_delay_s,
+            )
+            self._integrity = report
 
         threading.Thread(target=run, name="integrity-check", daemon=True).start()
 

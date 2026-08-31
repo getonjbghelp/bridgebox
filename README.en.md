@@ -203,10 +203,8 @@ connection test button, and the connection guide.
 
 ### Settings
 
-Five sections, ordered by how often they get touched - **Network** and
-**Profiles** lead (what people actually open Settings for when the game
-won't connect), then **General**, **Updates**, and **System**. Covered
-[below](#all-settings).
+Five sections: **General**, **System**, **Network**, **Updates**, and
+**Profiles**. Covered [below](#all-settings).
 
 ### Info
 
@@ -216,9 +214,10 @@ author, license, and a link for each - the same list as [CREDITS.md](CREDITS.md)
 link buttons (social, donations, and so on) - each either opens straight to its address
 or shows a popup with text. The megaphone button in the sidebar
 leads to the same place the Info screen does - GitHub Issues or a feedback form, for
-reporting a bug. The Info screen's content and the version history behind the β mark
-above aren't hardcoded text, they're data under `frontend/src/data/content/`, which a
-developer edits through `tools/build_content.py` without touching the source.
+reporting a bug. The Info screen's content isn't hardcoded text, it's data under
+`frontend/src/data/content/`, which a developer edits through `tools/build_content.py`
+without touching the source. The version history behind the β mark above is pulled
+straight from the project's GitHub Releases, not stored in the repo.
 
 ### Logs
 
@@ -551,8 +550,8 @@ build machine leaked into the exe or `_internal/`, and that the integrity manife
 Info screen's file integrity status) actually matches what's really in the folder.
 
 The `--icon path\to\file.ico` flag swaps in your own icon instead of the generated one.
-`--skip-frontend-build` skips rebuilding the interface if `frontend/dist` is already
-current.
+`--skip-frontend-build` is not supported by this script - the interface is always
+rebuilt fresh.
 
 ---
 
@@ -574,14 +573,14 @@ BridgeBoxDevVersion/
     src/components/              reusable buttons, toggles, and so on
     src/data/strings/ru.json,    interface text in both languages
               en.json
-    src/data/content/            version history and the Info screen's content
-      changelog.json, about.json
+    src/data/content/            the Info screen's content (version history comes from GitHub Releases)
+      about.json, legacyChangelog.json
   zapret/                        the DPI bypass engine
     strategies/                  strategies (adapted for BridgeBox)
     lists/list-jackbox.txt       the bypass domain list
   tools/
     edit_ui_strings.py           interface text editor (RU/EN side by side)
-    build_content.py             editor for the version history and Info screen
+    build_content.py             editor for the Info screen's content (about.json, people.json)
     build_portable.py            builds the portable release (what ships on Releases)
 ```
 

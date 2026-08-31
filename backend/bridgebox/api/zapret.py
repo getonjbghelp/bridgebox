@@ -376,6 +376,20 @@ class ZapretMixin:
                 if self._strategy_future is not None and not self._strategy_future.done():
                     return {"ok": False, "error": "тест стратегий уже выполняется", "total": 0}
 
+                # The suite drives the same winws/WinDivert the bridge itself
+                # owns (build_switch stops-and-restarts it once per strategy,
+                # dozens of times over a multi-minute run) - a live game
+                # session left on the running bridge would get its DPI
+                # bypass yanked out from under it on every switch instead of
+                # staying up while the test measures something else
+                # entirely. Stopping first is the same call the "Мост
+                # включен" toggle itself makes, so the user finds the bridge
+                # off and starts it again deliberately once the test is
+                # done, rather than discovering mid-test that their game
+                # dropped.
+                if self._runtime.get_status().get("running"):
+                    self._runtime.stop()
+
                 strategies = discover_strategies(self._layout().strategies_dir)
                 # group_strategies already yields Основная -> Альтернативы ->
                 # Прочие (matching how Settings displays them), rather than
@@ -494,12 +508,16 @@ class ZapretMixin:
             return {"ok": False, "error": describe_exception(exc), "path": ""}
 
     async def _test_strategies_coro(self, ordered, strategies, stages) -> None:
-        switch = build_switch(
-            self._runtime_core.zapret_process,
-            strategies,
-            hide_console=self._config.zapret.hide_console,
-        )
         try:
+            # The suite owns Zapret for its entire run. Keep the bridge down
+            # before switching strategies so its listener and active WinDivert
+            # filter cannot interfere with the probes.
+            await self._runtime_core.stop()
+            switch = build_switch(
+                self._runtime_core.zapret_process,
+                strategies,
+                hide_console=self._config.zapret.hide_console,
+            )
             for stage_name, targets in stages:
                 self._strategy_stage = stage_name
 
