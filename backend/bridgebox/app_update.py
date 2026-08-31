@@ -48,6 +48,11 @@ Two things a self-replacing, admin-elevated binary cannot skip, unlike a
   (unlike Rust/Go), so that read handle blocks the rename exactly like an
   antivirus one would. Both are self-resolving, neither is fast enough to
   assume away.
+- A third WinError 5 source waiting cannot fix: a genuinely wrong ACL. A
+  portable install lives wherever the user unzipped it, not somewhere this
+  app ever set permissions on, so _replace_path calls zapret/update.py's own
+  grant_full_control before the first rename - same fix, same reasoning,
+  reused rather than duplicated.
 
 Same shape as zapret/update.py's release-fetching/download half on purpose -
 matching call sites read faster - but this module's own allowlist and
@@ -67,6 +72,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 from .winlock import retry_locked as _retry_locked_base
+from .zapret.update import grant_full_control
 
 logger = logging.getLogger(__name__)
 
@@ -583,6 +589,10 @@ def _replace_path(new_path: Path, current_path: Path, *, sleep=time.sleep) -> Pa
     _remove_path(backup)  # leftover from an update never cleaned up
     had_current = current_path.exists()
     if had_current:
+        # A wrong ACL and a live handle both surface as WinError 5, and only
+        # one of them is fixed by waiting - rule the ACL out first, same as
+        # zapret/update.py's install_release does for zapret_dir.
+        grant_full_control(current_path)
         _retry_locked(lambda: os.replace(current_path, backup), sleep=sleep)
     try:
         _retry_locked(lambda: os.replace(new_path, current_path), sleep=sleep)

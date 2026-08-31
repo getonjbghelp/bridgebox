@@ -211,13 +211,18 @@ export function IconRadar({ size = 20 }: IconProps) {
 /** Updates. A cloud with a sync arrow through it. */
 export function IconCloudSync({ size = 20 }: IconProps) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <svg width={size} height={size} viewBox="-1 -1 26 26" fill="none" aria-hidden="true">
       {/* The standard cloud-download outline, the shape Lucide/Feather and
           every other icon set converge on - three attempts at drawing a
           bespoke one (sync arrows under the cloud, inside it, a clock) all
           collapsed into unreadable hooks at icon size. A 24 grid rather than
           the house 20 because that is the grid the shape is defined on;
-          IconSteam is the existing precedent for an icon with its own box. */}
+          IconSteam is the existing precedent for an icon with its own box.
+          The viewBox itself is -1..25 rather than the drawn 0..24: the cloud
+          arc's top edge sits right at y=0, so its 1.7 stroke poked past the
+          SVG's own default clip (same clipping - not a container issue -
+          BrandLogo's viewBox hit earlier). A 1-unit margin on every side
+          covers it without redrawing the path. */}
       <path
         d="M12 13v8m0 0-3.5-3.5M12 21l3.5-3.5"
         stroke="currentColor"

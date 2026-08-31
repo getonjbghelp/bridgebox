@@ -630,6 +630,32 @@ def test_replace_running_exe_gives_up_after_the_retry_budget_on_a_persistent_loc
     assert current.read_bytes() == b"old", "must still be launchable after giving up"
 
 
+def test_replace_running_exe_fixes_permissions_before_the_first_rename(
+    tmp_path: Path, monkeypatch
+):
+    """Order matters: after the first rename has already failed is too late -
+    same reasoning, same test shape as zapret/update.py's own
+    test_install_release_fixes_permissions_before_touching_anything."""
+    current = tmp_path / "BridgeBox.exe"
+    current.write_bytes(b"old")
+    new = tmp_path / "BridgeBox.exe.new"
+    new.write_bytes(b"new")
+
+    order: list[str] = []
+    monkeypatch.setattr(
+        app_update, "grant_full_control", lambda path, **kw: order.append("icacls") or True
+    )
+    real_replace = app_update.os.replace
+    monkeypatch.setattr(
+        app_update.os, "replace",
+        lambda src, dst: order.append("replace") or real_replace(src, dst),
+    )
+
+    app_update.replace_running_exe(new, current)
+
+    assert order[0] == "icacls"
+
+
 # ---- replace_running_internal -----------------------------------------------
 
 
