@@ -15,7 +15,9 @@
     "integrityBody": "Something in the BridgeBox folder no longer matches the original. If you didn't edit these files yourself, the copy you're running may have been tampered with — reinstall from a source you trust.",
     "integrityCount": "Files changed: {count}",
     "integrityDismiss": "Don't show this again",
-    "integrityHide": "Dismiss"
+    "integrityHide": "Dismiss",
+    "connHealthTitle": "The bypass seems to have stopped working",
+    "connHealthBody": "Jackbox's servers haven't answered for a while. Open Settings → Network and run the strategy test again."
   },
   "sidebar": {
     "ariaLabel": "Main navigation",
@@ -203,6 +205,8 @@
     "hostlistLabel": "Bypass domains",
     "hostlistHint": "zapret uses this list to decide which traffic gets routed around DPI",
     "hostlistButton": "Edit",
+    "connHealthLabel": "Watch the connection",
+    "connHealthHint": "While the bridge is on, the app occasionally checks whether Jackbox's servers are still answering and shows a banner if the bypass has stopped working",
     "hostlistModalTitle": "DPI bypass domains",
     "hostlistModalDescription": "One hostname per line. Lines starting with \"#\" are comments.",
     "hostlistSaveButton": "Save",
@@ -337,6 +341,12 @@
     "updatesAutoHint": "Runs in the background and never holds up the app opening",
     "updatesManualLabel": "I'll check for updates myself",
     "updatesManualHint": "GitHub isn't always reachable from the kind of network this app exists for. You can run the check any time from Settings",
+    "appUpdatesTitle": "BridgeBox updates",
+    "appUpdatesBody": "BridgeBox itself gets updated too - sometimes with critical security fixes. Want it to check for new versions automatically on startup?",
+    "appUpdatesAutoLabel": "Check on every startup",
+    "appUpdatesAutoHint": "The only way to hear about a critical security update automatically, without opening Settings",
+    "appUpdatesManualLabel": "I'll check for updates myself",
+    "appUpdatesManualHint": "You can run the check any time from Settings - but a critical update won't announce itself without this on",
     "connectTitle": "How do I connect the game?",
     "connectBody": "The bridge is ready. To route your game through it, add this to the launch options (Steam) or the shortcut's Target field:",
     "connectNoScheme": "No \"https://\" — the game won't accept an address with a scheme, it adds that itself.",

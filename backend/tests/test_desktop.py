@@ -217,6 +217,9 @@ class FakeRuntime:
     def get_status(self):
         return dict(self._status)
 
+    def get_health_status(self):
+        return None
+
     def run(self, coro_factory, timeout=20.0):
         import asyncio
 
@@ -485,6 +488,27 @@ def test_api_test_connection_when_bridge_not_running(tmp_path: Path):
     assert "не запущен" in result["error"]
 
 
+def test_api_connection_health_status_reads_healthy_by_default(tmp_path: Path):
+    """FakeRuntime.get_health_status() returns None (no round has run) -
+    reads as healthy, same "absence of bad news" convention integrity_status
+    follows before its own first check."""
+    api = _make_api(tmp_path)
+
+    result = api.connection_health_status()
+
+    assert result == {"ok": True, "error": None}
+
+
+def test_api_connection_health_status_surfaces_a_degraded_round(tmp_path: Path):
+    runtime = FakeRuntime()
+    runtime.get_health_status = lambda: {"ok": False, "consecutiveFailures": 3}
+    api = _make_api(tmp_path, runtime=runtime)
+
+    result = api.connection_health_status()
+
+    assert result == {"ok": False, "error": None}
+
+
 async def test_api_test_connection_ping_failure_does_not_block_room_creation(
     tmp_path: Path, monkeypatch
 ):
@@ -552,6 +576,43 @@ async def test_api_test_connection_ping_failure_does_not_block_room_creation(
         assert any("создана" in step for step in result["steps"])
     finally:
         await runner.cleanup()
+
+
+async def test_api_test_connection_pings_a_custom_active_profile_instead_of_the_official_servers(
+    tmp_path: Path, monkeypatch
+):
+    """Same reasoning as the strategy suite's own version of this test
+    (test_api_test_strategies_probes_a_custom_active_profile...): the ping
+    step has to target the server actually in use, not the official one that
+    happens to be unused. Only Ecast is customised here - Blobcast's ping
+    target must stay the official one."""
+    from bridgebox.config import ProfilesConfig
+
+    captured = {}
+
+    async def capturing_probe(session, targets):
+        captured["targets"] = targets
+        return {
+            name: {"ok": True, "elapsedMs": 1.0, "status": 200, "error": None} for name, _ in targets
+        }
+
+    monkeypatch.setattr(desktop_diagnostics, "probe_targets", capturing_probe)
+
+    config = Config()
+    config.profiles = ProfilesConfig(
+        items=list(ProfilesConfig().items)
+        + [{"id": "mine", "name": "Mine", "kind": "ecast", "upstream": "https://mine.example"}],
+        active_ecast="mine",
+    )
+    runtime = FakeRuntime(status={"running": True, "host": "127.0.0.1", "port": 18449})
+    api = _make_api(tmp_path, config=config, runtime=runtime)
+
+    await api._test_connection_coro()
+
+    names = {name for name, _ in captured["targets"]}
+    assert "mine.example" in names
+    assert "ecast.jackboxgames.com" not in names
+    assert "blobcast.jackboxgames.com" in names
 
 
 async def test_api_test_connection_full_round_trip_against_a_real_local_server(
@@ -993,6 +1054,35 @@ def test_api_test_strategies_blobcast_only_probes_blobcast_targets(tmp_path: Pat
     assert len(progress["results"]) == 1
     assert progress["results"][0]["targetSet"] == "blobcast"
     assert set(progress["results"][0]["targets"]) == {n for n, _ in BLOBCAST_TARGETS}
+
+
+def test_api_test_strategies_probes_a_custom_active_profile_instead_of_the_official_servers(
+    tmp_path: Path,
+):
+    """A strategy that reaches the official Jackbox servers proves nothing
+    about whether it reaches a mirror the user pointed Ecast at instead - the
+    suite has to test the server actually in use."""
+    from bridgebox.config import ProfilesConfig
+
+    strategies_dir = tmp_path / "zapret" / "strategies"
+    strategies_dir.mkdir(parents=True)
+    (strategies_dir / "General.bat").write_text("@echo off\n")
+    config = Config()
+    config.zapret.dir = "zapret"
+    config.profiles = ProfilesConfig(
+        items=list(ProfilesConfig().items)
+        + [{"id": "mine", "name": "Mine", "kind": "ecast", "upstream": "https://mine.example"}],
+        active_ecast="mine",
+    )
+    api = _make_api(
+        tmp_path, config=config, runtime_core=FakeRuntimeCore(zapret_process=_FakeZapretProcess())
+    )
+
+    api.test_strategies(target_set="ecast")
+    progress = api.test_strategies_progress()
+
+    assert len(progress["results"]) == 1
+    assert set(progress["results"][0]["targets"]) == {"mine.example"}
 
 
 def test_export_strategy_results_without_a_window_answers_instead_of_raising(tmp_path: Path):
@@ -1747,6 +1837,29 @@ def test_api_save_hostlist_re_records_the_integrity_baseline(tmp_path: Path):
     report = integrity.verify(tmp_path)
     assert report.verified is True
     assert api.integrity_status()["verified"] is True
+
+
+def test_notify_ui_settled_and_start_integrity_check_race_only_one_wins(
+    tmp_path: Path, monkeypatch
+):
+    """App.tsx's settle signal and on_shown's fallback timer can both fire -
+    only the first should ever start a hash pass, not one each."""
+    monkeypatch.setattr(desktop_system, "UI_SETTLED_INTEGRITY_DELAY_S", 0)
+    calls = []
+    real_ensure_baseline = integrity.ensure_baseline
+
+    def counting_ensure_baseline(root, **kwargs):
+        calls.append(root)
+        return real_ensure_baseline(root, **kwargs)
+
+    monkeypatch.setattr(desktop_system.integrity, "ensure_baseline", counting_ensure_baseline)
+    api = _make_api(tmp_path)
+
+    api.notify_ui_settled()
+    api.start_integrity_check()
+    time.sleep(0.05)
+
+    assert len(calls) == 1
 
 
 def test_api_save_hostlist_reports_the_offending_line_instead_of_raising(tmp_path: Path):

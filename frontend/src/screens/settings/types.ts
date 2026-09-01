@@ -122,6 +122,7 @@ export interface AppConfig {
   zapret: { strategy: string; hide_console: boolean }
   update: { check_on_startup: boolean }
   app_update: { check_on_startup: boolean }
+  health_check: { enabled: boolean }
   ui?: { start_bridge_on_launch: boolean; minimize_to_tray: boolean }
   profiles: ProfilesConfig
   rewrite: RewriteConfig

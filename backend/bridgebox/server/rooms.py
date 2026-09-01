@@ -237,10 +237,18 @@ class AiohttpUpstreamClient:
             connect=UPSTREAM_CONNECT_TIMEOUT_S,
             sock_read=UPSTREAM_READ_STALL_TIMEOUT_S,
         )
+        # When a real game request last passed through here - read by
+        # RuntimeCore._health_check_loop to skip a probe round shortly after
+        # real traffic, rather than adding its own connections through the
+        # same Zapret process while the game is actively mid-exchange.
+        # Attempt time, not success: a request worth skipping a probe for is
+        # one the bridge is busy handling, whether or not it succeeds.
+        self.last_request_at: float | None = None
 
     async def request(
         self, method: str, url: str, *, headers: dict[str, str], data: bytes | None
     ) -> UpstreamResponse:
+        self.last_request_at = time.monotonic()
         async with self._session.request(
             method, url, headers=headers, data=data, timeout=self._timeout
         ) as resp:

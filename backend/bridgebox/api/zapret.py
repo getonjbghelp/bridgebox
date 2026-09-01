@@ -15,13 +15,12 @@ import webview
 
 from .. import integrity
 from ..diagnostics import (
-    BLOBCAST_TARGETS,
-    ECAST_TARGETS,
     build_switch,
     describe_exception,
     render_strategy_results_html,
     render_strategy_results_json,
     run_strategy_suite,
+    targets_for,
 )
 from ..paths import resolve_project_path
 from ..zapret import update as zapret_update
@@ -32,18 +31,23 @@ from ..zapret.strategies import save_hostlist as write_hostlist
 logger = logging.getLogger(__name__)
 
 
-def _stages_for(target_set: str) -> list[tuple[str, list[tuple[str, str]]]]:
+def _stages_for(target_set: str, profiles) -> list[tuple[str, list[tuple[str, str]]]]:
     """Which (name, targets) passes test_strategies runs, in order.
 
     "both" is genuinely two full passes over every strategy, not one pass
     against four combined targets - Api.test_strategies's docstring explains
     why a strategy that helps one protocol and hurts the other needs to stay
-    readable as two rows, not get averaged into one."""
+    readable as two rows, not get averaged into one. Per-kind targets come
+    from diagnostics.targets_for - a custom active profile's own server
+    instead of the official one, if the user set one (see that function)."""
     if target_set == "ecast":
-        return [("ecast", ECAST_TARGETS)]
+        return [("ecast", targets_for("ecast", profiles))]
     if target_set == "blobcast":
-        return [("blobcast", BLOBCAST_TARGETS)]
-    return [("ecast", ECAST_TARGETS), ("blobcast", BLOBCAST_TARGETS)]
+        return [("blobcast", targets_for("blobcast", profiles))]
+    return [
+        ("ecast", targets_for("ecast", profiles)),
+        ("blobcast", targets_for("blobcast", profiles)),
+    ]
 
 
 def _fastest_key(results: list[dict]) -> str | None:
@@ -399,7 +403,7 @@ class ZapretMixin:
                 if skip_heavy:
                     ordered = [s for s in ordered if s.group != "Прочие"]
 
-                stages = _stages_for(target_set)
+                stages = _stages_for(target_set, self._config.profiles)
                 self._strategy_results = []
                 self._strategy_error = None
                 self._strategy_stage = stages[0][0]

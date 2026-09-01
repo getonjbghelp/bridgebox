@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useState } from 'react'
 import { ClosingOverlay } from './components/ClosingOverlay'
 import { IntegrityBanner } from './components/IntegrityBanner'
 import { AppUpdateBanner } from './components/AppUpdateBanner'
+import { ConnectionHealthBanner } from './components/ConnectionHealthBanner'
 import { Sidebar } from './components/Sidebar'
 import { HomeScreen } from './screens/HomeScreen'
 import { SettingsScreen } from './screens/SettingsScreen'
@@ -9,6 +10,7 @@ import { LogsScreen } from './screens/LogsScreen'
 import { InfoScreen } from './screens/InfoScreen'
 import { SetupWizard } from './screens/SetupWizard'
 import { useMotionPrefs } from './state/MotionPrefsContext'
+import { callBridge } from './lib/bridge'
 // ponytail: diagnostic build only - see lib/motionTrace.ts.
 import { traceMark } from './lib/motionTrace'
 import './App.css'
@@ -98,6 +100,13 @@ function App() {
       stopId = window.setTimeout(() => {
         traceMark('prewarm off')
         setPrewarming(false)
+        // The real trigger for the backend's integrity hash (see
+        // api/system.py's notify_ui_settled): all three screens have now had
+        // their expensive first layout, so the disk contention that check
+        // exists to dodge has much less to collide with here than it did
+        // right at window-open. Fire-and-forget - a browser dev session with
+        // no bridge just leaves the backend on its own blind fallback timer.
+        callBridge('notify_ui_settled').catch(() => {})
       }, 500)
     }, 520)
     return () => {
@@ -129,6 +138,7 @@ function App() {
     <div className="bb-app-shell" data-prewarm={prewarming}>
       <IntegrityBanner />
       <AppUpdateBanner />
+      <ConnectionHealthBanner />
       <div className="bb-app">
         <Sidebar active={screen} onSelect={setScreen} />
       {/*

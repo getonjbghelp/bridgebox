@@ -91,6 +91,37 @@ BLOBCAST_TARGETS: list[tuple[str, str]] = [
 ]
 
 
+def _profile_targets(profile) -> list[tuple[str, str]]:
+    """Targets for a non-official profile's own upstream - a mirror or
+    self-hosted server whose API shape isn't confirmed ahead of time, unlike
+    ECAST_TARGETS/BLOBCAST_TARGETS' known-good endpoints. Probes the bare
+    upstream root instead - the same reasoning BLOBCAST_TARGETS' single entry
+    already relies on: any HTTP response, even a 404, proves the DPI bypass
+    got the TLS handshake through, which is all a ping measures."""
+    from urllib.parse import urlsplit
+
+    host = urlsplit(profile.upstream).hostname or profile.upstream
+    return [(host, f"{profile.upstream}/")]
+
+
+def targets_for(kind: str, profiles) -> list[tuple[str, str]]:
+    """ECAST_TARGETS/BLOBCAST_TARGETS, unless the user has pointed this
+    protocol at a profile of their own - then every ping/probe in this app
+    (the strategy suite, "Проверить соединение" on the Home screen) targets
+    THAT server instead. Reaching the official servers proves nothing about
+    whether a strategy or a network path reaches a different one, which is
+    the whole point of testing against the server actually in use.
+
+    `profiles` is a config.ProfilesConfig, not imported/type-hinted here so
+    this module keeps no dependency on config.py - anything with an
+    `.active(kind)` returning an object with `.upstream`/`.builtin` duck-types
+    fine, and both real callers already have one on hand (self._config.profiles)."""
+    profile = profiles.active(kind)
+    if not profile.builtin:
+        return _profile_targets(profile)
+    return ECAST_TARGETS if kind == "ecast" else BLOBCAST_TARGETS
+
+
 async def probe_targets(
     session,
     targets: list[tuple[str, str]] = ECAST_TARGETS,

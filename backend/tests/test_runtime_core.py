@@ -538,36 +538,48 @@ async def test_two_concurrent_stops_tear_down_each_listener_once(tmp_path: Path)
     assert main_runner.cleanup_calls == 1, "the bridge server was torn down twice"
 
 
-# ---- upstream pre-warm ----
+# ---- health check's first round (formerly a separate upstream pre-warm) ----
 
 
-class FakeUpstreamClient:
-    def __init__(self):
-        self.calls = []
+async def test_health_check_first_round_fires_immediately_without_zapret(
+    tmp_path: Path, monkeypatch
+):
+    """No zapret means no settling to wait for - the first probe must not
+    sit through a full HEALTH_CHECK_INTERVAL_S before firing. This is the
+    gap the old one-shot prewarm existed to cover; the interval below is set
+    absurdly long so the assertion can only pass if the first round really
+    is immediate, not just eventually reached."""
+    import asyncio
 
-    async def request(self, method, url, *, headers, data):
-        self.calls.append((method, url))
-        return object()
+    from bridgebox import runtime_core
 
-
-async def test_start_pre_warms_both_active_upstreams(tmp_path: Path):
+    monkeypatch.setattr(runtime_core, "HEALTH_CHECK_INTERVAL_S", 60)
     config = Config()
     config.zapret.enabled = False
     calls, deps = _make_deps(tmp_path)
-    client = FakeUpstreamClient()
-    deps["upstream_client_factory"] = lambda session: client
+    session = _FakeHealthSession(healthy=True)
+    deps["session_factory"] = lambda: session
     core = RuntimeCore(config=config, project_root=tmp_path, **deps)
 
     await core.start()
-    await core._prewarm_task
+    await asyncio.sleep(0.05)
 
-    assert set(client.calls) == {
-        ("GET", "https://ecast.jackboxgames.com"),
-        ("GET", "https://blobcast.jackboxgames.com"),
-    }
+    assert session.get_calls > 0
+    assert core.health_status() == {"ok": True, "consecutiveFailures": 0}
 
 
-async def test_prewarm_waits_for_winws_to_settle_when_zapret_is_enabled(tmp_path: Path):
+async def test_health_check_first_round_waits_for_winws_to_settle_when_zapret_is_enabled(
+    tmp_path: Path, monkeypatch
+):
+    import asyncio
+
+    from bridgebox import runtime_core
+
+    monkeypatch.setattr(runtime_core, "STRATEGY_SETTLE_S", 0.05)
+    # Also absurdly long, so a round only happens here because the settle
+    # wait finished, not because the interval did.
+    monkeypatch.setattr(runtime_core, "HEALTH_CHECK_INTERVAL_S", 60)
+
     strategies_dir = tmp_path / "zapret" / "strategies"
     strategies_dir.mkdir(parents=True)
     (strategies_dir / "General.bat").write_text("@echo off\n")
@@ -578,57 +590,17 @@ async def test_prewarm_waits_for_winws_to_settle_when_zapret_is_enabled(tmp_path
     config.zapret.strategy = "general"
 
     calls, deps = _make_deps(tmp_path)
-    client = FakeUpstreamClient()
-    deps["upstream_client_factory"] = lambda session: client
+    session = _FakeHealthSession(healthy=True)
+    deps["session_factory"] = lambda: session
     zapret_process = ZapretProcess(popen=FakeLauncher(), runner=FakeSubprocessRunner(), allowed_root=tmp_path)
     core = RuntimeCore(config=config, project_root=tmp_path, zapret_process=zapret_process, **deps)
 
     await core.start()
-    assert client.calls == [], "must not fire before WinDivert has settled into the packet path"
+    assert session.get_calls == 0, "must not probe before WinDivert has settled into the packet path"
 
-    await core._prewarm_task
+    await asyncio.sleep(0.1)
 
-    assert set(client.calls) == {
-        ("GET", "https://ecast.jackboxgames.com"),
-        ("GET", "https://blobcast.jackboxgames.com"),
-    }
-
-
-async def test_stop_cancels_a_still_pending_prewarm(tmp_path: Path):
-    strategies_dir = tmp_path / "zapret" / "strategies"
-    strategies_dir.mkdir(parents=True)
-    (strategies_dir / "General.bat").write_text("@echo off\n")
-
-    config = Config()
-    config.zapret.enabled = True
-    config.zapret.dir = "zapret"
-    config.zapret.strategy = "general"
-
-    calls, deps = _make_deps(tmp_path)
-    zapret_process = ZapretProcess(popen=FakeLauncher(), runner=FakeSubprocessRunner(), allowed_root=tmp_path)
-    core = RuntimeCore(config=config, project_root=tmp_path, zapret_process=zapret_process, **deps)
-
-    await core.start()
-    prewarm_task = core._prewarm_task
-
-    await core.stop()
-
-    assert prewarm_task.cancelled()
-
-
-async def test_prewarm_failure_is_swallowed(tmp_path: Path):
-    class BrokenUpstreamClient:
-        async def request(self, method, url, *, headers, data):
-            raise ConnectionError("boom")
-
-    config = Config()
-    config.zapret.enabled = False
-    calls, deps = _make_deps(tmp_path)
-    deps["upstream_client_factory"] = lambda session: BrokenUpstreamClient()
-    core = RuntimeCore(config=config, project_root=tmp_path, **deps)
-
-    await core.start()
-    await core._prewarm_task  # must not raise
+    assert session.get_calls > 0
 
 
 async def test_a_stop_racing_a_start_does_not_interleave(tmp_path: Path):
@@ -646,3 +618,198 @@ async def test_a_stop_racing_a_start_does_not_interleave(tmp_path: Path):
     # The second start saw the first one finished and did nothing, rather than
     # binding a second pair of listeners.
     assert len(calls["run_server"]) == 1
+
+
+class _FakeProbeResponse:
+    def __init__(self, status: int = 200):
+        self.status = status
+        self.headers: dict = {}
+
+    async def read(self):
+        return b"{}"
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+
+class _FakeHealthSession:
+    """Feeds _health_check_loop's probe_targets calls - configurable
+    success/failure per round (`.healthy` can be flipped mid-test), unlike
+    the module's own FakeSession above, which only ever supports .close()."""
+
+    def __init__(self, *, healthy: bool):
+        self.healthy = healthy
+        self.get_calls = 0
+
+    def get(self, url, **kwargs):
+        self.get_calls += 1
+        if not self.healthy:
+            raise ConnectionError("boom")
+        return _FakeProbeResponse()
+
+    async def close(self):
+        pass
+
+
+async def test_health_check_task_is_not_started_when_disabled(tmp_path: Path):
+    config = Config()
+    config.zapret.enabled = False
+    config.health_check.enabled = False
+    calls, deps = _make_deps(tmp_path)
+    core = RuntimeCore(config=config, project_root=tmp_path, **deps)
+
+    await core.start()
+
+    assert core._health_task is None
+    assert core.health_status() is None
+
+
+async def test_health_check_task_starts_when_enabled(tmp_path: Path):
+    config = Config()
+    config.zapret.enabled = False
+    calls, deps = _make_deps(tmp_path)
+    core = RuntimeCore(config=config, project_root=tmp_path, **deps)
+
+    await core.start()
+
+    assert core._health_task is not None
+
+
+async def test_health_check_flags_unhealthy_after_consecutive_failures(
+    tmp_path: Path, monkeypatch
+):
+    import asyncio
+
+    from bridgebox import runtime_core
+
+    monkeypatch.setattr(runtime_core, "HEALTH_CHECK_INTERVAL_S", 0.01)
+    config = Config()
+    config.zapret.enabled = False
+    calls, deps = _make_deps(tmp_path)
+    deps["session_factory"] = lambda: _FakeHealthSession(healthy=False)
+    core = RuntimeCore(config=config, project_root=tmp_path, **deps)
+
+    await core.start()
+    await asyncio.sleep(0.1)  # several rounds at the shrunk interval
+
+    health = core.health_status()
+    assert health is not None
+    assert health["ok"] is False
+    assert health["consecutiveFailures"] >= runtime_core.HEALTH_CHECK_FAILURE_THRESHOLD
+
+
+async def test_health_check_recovers_once_a_round_succeeds(tmp_path: Path, monkeypatch):
+    import asyncio
+
+    from bridgebox import runtime_core
+
+    monkeypatch.setattr(runtime_core, "HEALTH_CHECK_INTERVAL_S", 0.01)
+    config = Config()
+    config.zapret.enabled = False
+    calls, deps = _make_deps(tmp_path)
+    session = _FakeHealthSession(healthy=False)
+    deps["session_factory"] = lambda: session
+    core = RuntimeCore(config=config, project_root=tmp_path, **deps)
+
+    await core.start()
+    await asyncio.sleep(0.1)
+    assert core.health_status()["ok"] is False
+
+    session.healthy = True
+    await asyncio.sleep(0.1)
+
+    health = core.health_status()
+    assert health["ok"] is True
+    assert health["consecutiveFailures"] == 0
+
+
+async def test_stop_cancels_the_health_check_task_and_clears_the_report(
+    tmp_path: Path, monkeypatch
+):
+    import asyncio
+
+    from bridgebox import runtime_core
+
+    monkeypatch.setattr(runtime_core, "HEALTH_CHECK_INTERVAL_S", 0.01)
+    config = Config()
+    config.zapret.enabled = False
+    calls, deps = _make_deps(tmp_path)
+    deps["session_factory"] = lambda: _FakeHealthSession(healthy=False)
+    core = RuntimeCore(config=config, project_root=tmp_path, **deps)
+
+    await core.start()
+    await asyncio.sleep(0.1)
+    health_task = core._health_task
+    assert health_task is not None
+
+    await core.stop()
+
+    assert core._health_task is None
+    assert core.health_status() is None
+
+
+class _FakeUpstreamClientWithActivity:
+    """A minimal stand-in whose last_request_at can be set directly, to
+    simulate real game traffic having (or not having) just passed through -
+    see RECENT_ACTIVITY_SKIP_S."""
+
+    last_request_at: float | None = None
+
+
+async def test_health_check_round_is_skipped_shortly_after_real_traffic(
+    tmp_path: Path, monkeypatch
+):
+    import asyncio
+    import time
+
+    from bridgebox import runtime_core
+
+    monkeypatch.setattr(runtime_core, "HEALTH_CHECK_INTERVAL_S", 0.01)
+    monkeypatch.setattr(runtime_core, "RECENT_ACTIVITY_SKIP_S", 10)
+    config = Config()
+    config.zapret.enabled = False
+    calls, deps = _make_deps(tmp_path)
+    session = _FakeHealthSession(healthy=True)
+    deps["session_factory"] = lambda: session
+    upstream_client = _FakeUpstreamClientWithActivity()
+    deps["upstream_client_factory"] = lambda s: upstream_client
+    core = RuntimeCore(config=config, project_root=tmp_path, **deps)
+
+    upstream_client.last_request_at = time.monotonic()  # "just happened"
+
+    await core.start()
+    await asyncio.sleep(0.05)
+
+    assert session.get_calls == 0, "a probe must not fire while real traffic was just seen"
+    assert core.health_status() is None
+
+
+async def test_health_check_resumes_once_real_traffic_activity_goes_stale(
+    tmp_path: Path, monkeypatch
+):
+    import asyncio
+    import time
+
+    from bridgebox import runtime_core
+
+    monkeypatch.setattr(runtime_core, "HEALTH_CHECK_INTERVAL_S", 0.01)
+    monkeypatch.setattr(runtime_core, "RECENT_ACTIVITY_SKIP_S", 10)
+    config = Config()
+    config.zapret.enabled = False
+    calls, deps = _make_deps(tmp_path)
+    session = _FakeHealthSession(healthy=True)
+    deps["session_factory"] = lambda: session
+    upstream_client = _FakeUpstreamClientWithActivity()
+    deps["upstream_client_factory"] = lambda s: upstream_client
+    core = RuntimeCore(config=config, project_root=tmp_path, **deps)
+
+    upstream_client.last_request_at = time.monotonic() - 3600  # long stale
+
+    await core.start()
+    await asyncio.sleep(0.05)
+
+    assert session.get_calls > 0
+    assert core.health_status() == {"ok": True, "consecutiveFailures": 0}

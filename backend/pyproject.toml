@@ -1,6 +1,6 @@
 [project]
 name = "bridgebox"
-version = "0.1.7b1"
+version = "0.1.8b1"
 description = "Toolkit for filtering DPI traffic to Jackbox servers"
 requires-python = ">=3.11"
 dependencies = [

@@ -10,6 +10,7 @@ import {
   IconCheckCircle,
   IconCloudSync,
   IconCopy,
+  IconGithub,
   IconLock,
   IconRadar,
   IconSteam,
@@ -31,7 +32,15 @@ import './SetupWizard.css'
  * cannot be skipped. There is nothing behind this yet.
  */
 
-const STEPS = ['welcome', 'certificate', 'strategy', 'updates', 'connect', 'done'] as const
+const STEPS = [
+  'welcome',
+  'certificate',
+  'strategy',
+  'updates',
+  'appUpdates',
+  'connect',
+  'done',
+] as const
 
 const STRATEGY_POLL_MS = 700
 const FALLBACK_HOST = '127.0.0.1'
@@ -55,6 +64,7 @@ interface TestStrategiesProgress {
 interface WizardConfig {
   server: { host: string; port: number }
   update: { check_on_startup: boolean }
+  app_update: { check_on_startup: boolean }
   zapret: { strategy: string }
 }
 
@@ -110,6 +120,9 @@ export function SetupWizard() {
   // -- updates step --------------------------------------------------------
   const [checkOnStartup, setCheckOnStartup] = useState(false)
 
+  // -- appUpdates step ------------------------------------------------------
+  const [appCheckOnStartup, setAppCheckOnStartup] = useState(false)
+
   // -- connect step --------------------------------------------------------
   const [copied, setCopied] = useState(false)
 
@@ -143,6 +156,7 @@ export function SetupWizard() {
           if (!result.ok || !result.config) return
           setConfig(result.config)
           setCheckOnStartup(result.config.update.check_on_startup)
+          setAppCheckOnStartup(result.config.app_update.check_on_startup)
         })
         .catch(() => {})
       // The CA may already be trusted - a factory reset clears the config but
@@ -303,6 +317,13 @@ export function SetupWizard() {
     setCheckOnStartup(value)
     if (isNativeBridgeAvailable()) {
       callBridge('update_config', { update: { check_on_startup: value } }).catch(() => {})
+    }
+  }
+
+  function setAppUpdatePolicy(value: boolean) {
+    setAppCheckOnStartup(value)
+    if (isNativeBridgeAvailable()) {
+      callBridge('update_config', { app_update: { check_on_startup: value } }).catch(() => {})
     }
   }
 
@@ -713,6 +734,40 @@ export function SetupWizard() {
                     label={strings.setup.updatesManualLabel}
                     hint={strings.setup.updatesManualHint}
                     onSelect={() => setUpdatePolicy(false)}
+                  />
+                </div>
+
+                <Actions>
+                  <Button variant="primary" fullWidth onClick={goNext}>
+                    {strings.setup.nextButton}
+                  </Button>
+                </Actions>
+              </StepLayout>
+            )}
+
+            {step === 'appUpdates' && (
+              <StepLayout
+                // GitHub, not the same cloud-sync glyph the Zapret step just
+                // showed - this step comes right after it, and repeating the
+                // icon would read as a duplicate rather than a related but
+                // separate check. GitHub is also literally where this check
+                // looks (see appUpdatesBody/config.app_update).
+                icon={<IconGithub size={40} />}
+                title={strings.setup.appUpdatesTitle}
+                body={strings.setup.appUpdatesBody}
+              >
+                <div className="bb-setup__choices">
+                  <ChoiceCard
+                    selected={appCheckOnStartup}
+                    label={strings.setup.appUpdatesAutoLabel}
+                    hint={strings.setup.appUpdatesAutoHint}
+                    onSelect={() => setAppUpdatePolicy(true)}
+                  />
+                  <ChoiceCard
+                    selected={!appCheckOnStartup}
+                    label={strings.setup.appUpdatesManualLabel}
+                    hint={strings.setup.appUpdatesManualHint}
+                    onSelect={() => setAppUpdatePolicy(false)}
                   />
                 </div>
 

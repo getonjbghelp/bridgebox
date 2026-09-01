@@ -15,17 +15,30 @@ from ..window_chrome import THEMED_NONE, apply_titlebar_theme
 
 logger = logging.getLogger(__name__)
 
-# How long to leave the UI alone before starting to hash. The window fires
-# `shown` before it has drawn much of anything, and the first seconds after
-# that are when the user is clicking around the tabs for the first time -
-# exactly when a motion trace showed frames taking 220ms with the renderer's
-# own main thread idle and no script running. Nothing was computing the new
-# screen; it just could not get a frame presented. Every screen switch after
-# the first few seconds, including the first ever display of Settings 79
-# seconds in, was clean - so what mattered was WHEN, not which screen.
-# Nobody is waiting on this result: it feeds a banner about a warning that
-# cannot be acted on instantly anyway.
+# Fallback only - see notify_ui_settled for the real trigger. The window
+# fires `shown` before it has drawn much of anything, and the first seconds
+# after that are when the user is clicking around the tabs for the first
+# time - exactly when a motion trace showed frames taking 220ms with the
+# renderer's own main thread idle and no script running. Nothing was
+# computing the new screen; it just could not get a frame presented. Every
+# screen switch after the first few seconds, including the first ever
+# display of Settings 79 seconds in, was clean - so what mattered was WHEN,
+# not which screen. Nobody is waiting on this result: it feeds a banner
+# about a warning that cannot be acted on instantly anyway. This still has
+# to cover notify_ui_settled never arriving at all (a browser dev session
+# with no bridge, a JS error before the App.tsx effect runs), so it stays a
+# blind, generous wait rather than shrinking to match the happy path.
 STARTUP_INTEGRITY_DELAY_S = 10
+
+# The real trigger: App.tsx's prewarm effect already measures the moment
+# that matters - all three screens have had their first (expensive) layout
+# and paint, so a screen switch right after this is the cheap ~15ms kind,
+# not the 66-76ms first-visit kind that used to land in the same seconds as
+# the hash. The disk contention this whole delay dance exists to avoid has
+# much less to collide with by the time this fires, which is why it can be
+# short instead of a second copy of the 10s guess above - a small buffer,
+# not 0, because the settle signal measures layout work, not disk idleness.
+UI_SETTLED_INTEGRITY_DELAY_S = 2
 
 # Sleep briefly every this many files while hashing - see
 # integrity.build_manifest's yield_every. The delay above keeps this off the
@@ -132,29 +145,52 @@ class SystemMixin:
         except Exception as exc:
             return {"ok": False, "error": describe_exception(exc), "config": None}
 
+    def notify_ui_settled(self) -> None:
+        """Called once by App.tsx right after its own prewarm-off signal - a
+        real measurement of "the UI is done with its expensive first layout"
+        instead of the blind STARTUP_INTEGRITY_DELAY_S guess start_integrity_
+        check falls back to when this never arrives. Whichever of the two
+        fires first wins; _start_integrity_check's guard covers the rest."""
+        self._start_integrity_check(delay_s=UI_SETTLED_INTEGRITY_DELAY_S)
+
     def start_integrity_check(self) -> None:
+        """Fallback trigger, called from on_shown - see notify_ui_settled for
+        the one that normally wins."""
+        self._start_integrity_check(delay_s=self._integrity_delay_s)
+
+    def _start_integrity_check(self, *, delay_s: float) -> None:
         """Hash our own files once, in the background, out of the UI's way.
 
         A thread, not the event loop: this is blocking disk I/O over a few
         hundred files, and the loop serves every other Api call.
 
+        Guarded by _integrity_lock rather than the old `self._integrity is
+        not None` check, which only ruled out a SECOND run once the first had
+        already finished - two callers racing to start the first one (the
+        normal case now that there are two entry points, and already possible
+        before this if `shown` fired twice from a fast tray restore) could
+        both win that check while the report was still None. The lock makes
+        "have I already started" true the instant the winner claims it.
+
         It also waits before it starts and yields while it runs, both for the
         same reason - see STARTUP_INTEGRITY_DELAY_S. The timing is logged
-        because the reasoning behind those two numbers is a measurement, and a
+        because the reasoning behind those numbers is a measurement, and a
         measurement that cannot be checked again later is one that rots."""
-        if self._integrity is not None:
-            return  # `shown` fires again on every restore from the tray
+        with self._integrity_lock:
+            if self._integrity_started:
+                return
+            self._integrity_started = True
 
         def run() -> None:
-            time.sleep(self._integrity_delay_s)
+            time.sleep(delay_s)
             started = time.monotonic()
             report = integrity.ensure_baseline(
                 self._project_root, yield_every=INTEGRITY_YIELD_EVERY
             )
             logger.info(
-                "integrity check finished in %.2fs (started %.1fs after the window appeared)",
+                "integrity check finished in %.2fs (started %.1fs after trigger)",
                 time.monotonic() - started,
-                self._integrity_delay_s,
+                delay_s,
             )
             self._integrity = report
 

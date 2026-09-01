@@ -14,7 +14,7 @@ import aiohttp
 
 from .. import i18n
 from ..config import rewrite_for
-from ..diagnostics import BLOBCAST_TARGETS, ECAST_TARGETS, describe_exception, probe_targets
+from ..diagnostics import describe_exception, probe_targets, targets_for
 from ..paths import resolve_project_path
 from ..server.rooms import redact, rewrite_server_field
 from ..tls.ca import CA_CERT_FILENAME
@@ -66,13 +66,31 @@ class DiagnosticsMixin:
         except Exception as exc:
             return {"ok": False, "error": str(exc), "steps": []}
 
+    def connection_health_status(self) -> dict:
+        """What the background health-check loop last found - see
+        runtime_core.RuntimeCore._health_check_loop. Polled by
+        ConnectionHealthBanner while the bridge is running.
+
+        None from the core (disabled, bridge not running, or no round has
+        completed yet) reads as healthy: the absence of bad news is not
+        itself bad news, the same convention integrity_status() follows for
+        "nothing checked yet"."""
+        try:
+            health = self._runtime.get_health_status()
+            ok = True if health is None else bool(health["ok"])
+            return {"ok": ok, "error": None}
+        except Exception as exc:
+            return {"ok": True, "error": describe_exception(exc)}
+
     async def _test_connection_coro(self) -> dict:
         """Two checks in one pass:
 
-        1. A plain reachability ping of the real Ecast AND Blobcast hosts
-           (ECAST_TARGETS + BLOBCAST_TARGETS - Ecast's API entry point plus a
-           relay shard confirmed from live traffic; Blobcast's own API entry
-           point alone), so a DPI block shows up immediately as its own step
+        1. A plain reachability ping of Ecast AND Blobcast's active servers
+           (diagnostics.targets_for - the official hosts, or a custom
+           profile's own upstream if the user pointed one at it: Ecast's API
+           entry point plus a relay shard confirmed from live traffic when
+           official; Blobcast's own API entry point alone, or its profile's
+           upstream), so a DPI block shows up immediately as its own step
            instead of being indistinguishable from a room-creation failure
            below. Blobcast is pinged here but not exercised beyond that - the
            room-creation round trip after it is Ecast-only, a much larger
@@ -131,7 +149,10 @@ class DiagnosticsMixin:
             # the room-creation step below still runs and can show whether
             # the API host specifically is reachable even if the relay shard
             # isn't (or vice versa).
-            ping_results = await probe_targets(session, ECAST_TARGETS + BLOBCAST_TARGETS)
+            ping_targets = targets_for("ecast", self._config.profiles) + targets_for(
+                "blobcast", self._config.profiles
+            )
+            ping_results = await probe_targets(session, ping_targets)
             for name, result in ping_results.items():
                 if result["ok"]:
                     steps.append(

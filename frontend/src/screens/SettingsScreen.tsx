@@ -63,6 +63,7 @@ const RESTART_SCOPE: Record<string, 'bridge' | 'app'> = {
   proxy: 'bridge',
   rewrite: 'bridge',
   logging: 'app',
+  health_check: 'bridge',
 }
 // Left-to-right order the tab bar itself shows them in - the only source of
 // truth for which way a switch should slide, so the animation never drifts
@@ -81,6 +82,7 @@ function restartScopeLabels(strings: ReturnType<typeof useStrings>): Record<stri
     proxy: strings.settings.networkSectionTitle,
     rewrite: strings.settings.profilesSectionTitle,
     logging: strings.settings.systemSectionTitle,
+    health_check: strings.settings.networkSectionTitle,
   }
 }
 
@@ -127,6 +129,7 @@ export function SettingsScreen() {
   // apart from a real edit. See handlePortBlur.
   const committedPortRef = useRef('8443')
   const [hideConsole, setHideConsole] = useState(true)
+  const [healthCheckEnabled, setHealthCheckEnabled] = useState(true)
   // Autostart is the one setting whose truth lives outside config.yaml - it is
   // a Windows scheduled task, and the task is what counts.
   const [autostart, setAutostart] = useState({ enabled: false, minimized: false })
@@ -281,6 +284,7 @@ export function SettingsScreen() {
     setPort(String(config.server.port))
     committedPortRef.current = String(config.server.port)
     setHideConsole(config.zapret.hide_console)
+    setHealthCheckEnabled(config.health_check.enabled)
     setCheckOnStartup(config.update.check_on_startup)
     setAppCheckOnStartup(config.app_update.check_on_startup)
     setProfiles(config.profiles)
@@ -454,6 +458,7 @@ export function SettingsScreen() {
       paths: null,
       update: null,
       app_update: null,
+      health_check: null,
       proxy: null,
       profiles: null,
       rewrite: null,
@@ -870,6 +875,20 @@ export function SettingsScreen() {
           }
         />
         {strategyTest.trigger}
+        <Row
+          label={strings.settings.connHealthLabel}
+          hint={strings.settings.connHealthHint}
+          control={
+            <Toggle
+              checked={healthCheckEnabled}
+              onChange={(v) => {
+                setHealthCheckEnabled(v)
+                persist({ health_check: { enabled: v } })
+              }}
+              label={strings.settings.connHealthLabel}
+            />
+          }
+        />
       </Section>
       )}
 

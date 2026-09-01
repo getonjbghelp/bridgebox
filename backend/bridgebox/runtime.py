@@ -13,6 +13,7 @@ class RuntimeCoreLike(Protocol):
     async def start(self) -> dict: ...
     async def stop(self) -> dict: ...
     def status(self) -> dict: ...
+    def health_status(self) -> dict | None: ...
     def set_zapret_exit_handler(self, handler) -> None: ...
 
 
@@ -66,6 +67,9 @@ class BridgeRuntime:
 
     def get_status(self) -> dict[str, Any]:
         return self._core.status()
+
+    def get_health_status(self) -> dict[str, Any] | None:
+        return self._core.health_status()
 
     def shutdown(self) -> None:
         """Tear down the bridge and stop the background thread. Never raises

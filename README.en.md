@@ -43,8 +43,21 @@ rented server.
 
 ---
 
+## Screenshots
+
+<table>
+<tr>
+<td align="center" width="33%"><img src=".github/readme/screenshots/home-en.png" alt="The Home screen"><br><sub>Home</sub></td>
+<td align="center" width="33%"><img src=".github/readme/screenshots/settings-network-en.png" alt="Settings — Network and bypass"><br><sub>Settings → Network</sub></td>
+<td align="center" width="33%"><img src=".github/readme/screenshots/info-en.png" alt="The Info screen"><br><sub>Info</sub></td>
+</tr>
+</table>
+
+---
+
 ## Table of contents
 
+- [Screenshots](#screenshots)
 - [What it is and why](#what-it-is-and-why)
 - [Download](#download)
 - [Connecting the game](#connecting-the-game)
@@ -103,8 +116,9 @@ tab of this repository, not in the Code tab (that's the source for development -
 2. Run `bridgebox.exe`. Windows will ask for administrator rights - without them
    BridgeBox can neither load the WinDivert driver nor install the local certificate;
    decline and the program will say so plainly and close.
-3. The first launch walks you through a setup wizard: interface language, then picking
-   a bypass strategy that actually works with your ISP.
+3. The first launch walks you through a setup wizard: interface language, picking
+   a bypass strategy that actually works with your ISP, and whether BridgeBox should
+   check for its own updates automatically.
 
 Every copy you download runs independently: its own certificates, its own settings, its
 own logs. Nothing is written to the registry or `%APPDATA%`, so you can keep several
@@ -176,7 +190,8 @@ and enter the code - nothing different from a normal game.
 
 Once the bridge is on, the home screen shows a **"Test connection (ping)"** button. It:
 
-- pings the real Jackbox servers - both Ecast and Blobcast;
+- pings the active Ecast and Blobcast servers - the official ones, or your own
+  server if a connection profile points at one;
 - creates an actual test room through the bridge;
 - confirms the room registered;
 - deletes it afterwards.
@@ -189,8 +204,8 @@ Each step prints its own line, so if something's wrong you can see exactly where
 
 The panel on the left collapses into a narrow icon strip (the logo folds into a "bb"
 monogram) - the button at the bottom toggles it, and the state is remembered between
-launches. On first run, the setup wizard walks you through language and bypass strategy
-before the regular window ever opens.
+launches. On first run, the setup wizard walks you through language, bypass strategy, and
+BridgeBox's own update settings before the regular window ever opens.
 
 On first run (or for as long as the version is still tagged beta), a **β** mark sits
 next to the logo - hovering it explains what that means, and clicking it opens the
@@ -268,9 +283,10 @@ Logs are also written to `logs/bridgebox.log`, rotating at 20 MB.
 | Setting | What it does |
 |---|---|
 | **Strategy** | The DPI bypass method. 21 presets ship by default, grouped **Main / Alternatives / Other**. Different ISPs need different strategies - that's normal, not a bug. |
-| **Strategy test** | Cycles through every strategy in turn. You can choose what to ping against - Ecast, Blobcast, or both (two full passes, one after the other). Afterwards it offers to apply the fastest one and to save the results as JSON or HTML. Takes a few minutes; "Both" takes a bit longer. |
+| **Strategy test** | Cycles through every strategy in turn, pinging the active Ecast/Blobcast servers - the official ones, or your own server if a connection profile points at one. You can choose what to ping against - Ecast, Blobcast, or both (two full passes, one after the other). Afterwards it offers to apply the fastest one and to save the results as JSON or HTML. Takes a few minutes; "Both" takes a bit longer. |
 | **Test everything** | Adds the "Other" group (Fake TLS Auto, Simple Fake) to the run. There are a lot of them and they're slow, so they're skipped by default. |
 | **Bypass domains** | The list of sites the bypass applies to. One name per line; lines starting with `#` are comments. Takes effect on the bridge's next start. |
+| **Watch the connection** | While the bridge is on, the program occasionally checks in the background whether Jackbox's servers are still answering, and shows a banner suggesting you rerun the strategy test if several checks in a row fail. On by default - takes effect on the bridge's next start. |
 
 **About the strategy test:** some strategies failing is the expected outcome, not an
 error. You only need one that works.
@@ -619,6 +635,9 @@ rebuilds it on the next launch by itself.
 - **The portable build writes nothing outside its own folder.** No `%APPDATA%`, no
   registry (aside from the optional Task Scheduler entry, and only if you turned
   autostart on yourself) - see [Download](#download).
+- **Self-update checks what it unpacks.** Files from the new version's archive can
+  only land inside the folder they're meant for - an archive that tried to write
+  anywhere else gets rejected outright.
 
 ---
 

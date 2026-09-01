@@ -308,3 +308,38 @@ def test_upstream_timeout_bounds_a_stalled_read_not_the_whole_transfer():
     assert client._timeout.total is None, "a total cap kills healthy large transfers"
     assert client._timeout.sock_read == 20.0
     assert client._timeout.connect == 10.0
+
+
+async def test_upstream_client_records_when_a_request_was_last_made():
+    """RuntimeCore._health_check_loop reads last_request_at to skip a health
+    check round right after real game traffic - see RECENT_ACTIVITY_SKIP_S."""
+    import time
+
+    from bridgebox.server.rooms import AiohttpUpstreamClient
+
+    class FakeResponse:
+        status = 200
+        headers: dict = {}
+
+        async def read(self):
+            return b"{}"
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+    class FakeSession:
+        def request(self, method, url, *, headers, data, timeout):
+            return FakeResponse()
+
+    client = AiohttpUpstreamClient(session=FakeSession())
+    assert client.last_request_at is None
+
+    before = time.monotonic()
+    await client.request("GET", "https://example.com", headers={}, data=None)
+    after = time.monotonic()
+
+    assert client.last_request_at is not None
+    assert before <= client.last_request_at <= after

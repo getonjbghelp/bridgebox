@@ -1,0 +1,33 @@
+/* Same top-of-app placement and layout as IntegrityBanner - a statement
+   about the program right now, not about a setting just changed (that one
+   lives at the bottom of Settings). Warning tokens, not danger: this is a
+   connectivity nudge, not a tamper/security finding. */
+.bb-conn-health {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-warning);
+  background: var(--color-warning-soft);
+  color: var(--color-text-primary);
+}
+
+.bb-conn-health__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 260px;
+}
+
+.bb-conn-health__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-warning);
+}
+
+.bb-conn-health__body {
+  font-size: 13px;
+  line-height: 1.45;
+}

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import time
 from pathlib import Path
 
 import aiohttp
@@ -10,7 +11,7 @@ from aiohttp import web
 
 from . import i18n
 from .config import Config
-from .diagnostics import STRATEGY_SETTLE_S
+from .diagnostics import STRATEGY_SETTLE_S, describe_exception, probe_targets, targets_for
 from .paths import resolve_project_path
 from .server.app import build_ssl_context as _build_ssl_context
 from .server.factory import BLOBCAST_SOCKETIO_APP
@@ -47,6 +48,26 @@ def _idle_status(config: Config, *, cert_installed: bool = False, notice: str | 
 # it reaches the UI verbatim - the same rule the rest of this app's
 # user-visible strings follow.
 CONSOLE_CLOSED_NOTICE = "Консоль Zapret была закрыта пользователем. Мост остановлен."
+
+# How often _health_check_loop re-probes the active servers while the bridge
+# is running. Frequent enough to catch a DPI change within the same session,
+# cheap enough (two small requests) not to matter next to the game's own
+# traffic.
+HEALTH_CHECK_INTERVAL_S = 120
+
+# Consecutive failed rounds before the banner fires. One bad round is exactly
+# what an ordinary network blip looks like; three in a row - a few minutes of
+# nothing getting through - is what a real DPI change looks like.
+HEALTH_CHECK_FAILURE_THRESHOLD = 3
+
+# Skip a round if a real game request passed through this recently - it is
+# fresher, more direct evidence than a synthetic probe would add, and it
+# keeps this loop's own connections from opening through the same Zapret
+# process while a real exchange might still be in flight. 15s, not chosen to
+# match anything precise: short enough that a real outage still surfaces
+# within a couple of HEALTH_CHECK_INTERVAL_S rounds, long enough to skip the
+# probe that would otherwise follow almost every burst of real traffic.
+RECENT_ACTIVITY_SKIP_S = 15
 
 
 def _default_session_factory() -> aiohttp.ClientSession:
@@ -98,7 +119,11 @@ class RuntimeCore:
 
         self._session: aiohttp.ClientSession | None = None
         self._http_client = None
-        self._prewarm_task: asyncio.Task | None = None
+        self._health_task: asyncio.Task | None = None
+        # None until a round has actually run, or once the bridge stops - see
+        # health_status(). Not "everything's fine" by default: that would be a
+        # false all-clear for the gap before the first round completes.
+        self._health: dict | None = None
         self._runner: web.AppRunner | None = None
         self._socketio_runner: web.AppRunner | None = None
         self._status: dict = _idle_status(config)
@@ -316,56 +341,105 @@ class RuntimeCore:
             "certInstalled": cert_installed,
             "zapretNotice": None,
         }
-        self._prewarm_task = asyncio.create_task(self._prewarm_upstream())
+        self._health_task = (
+            asyncio.create_task(self._health_check_loop())
+            if self._config.health_check.enabled
+            else None
+        )
         return self.status()
 
-    async def _prewarm_upstream(self) -> None:
-        """Best-effort: open the TLS connection to both the active Ecast AND
-        Blobcast upstreams while the user is still looking at "Мост запущен",
-        so the keep-alive connection AiohttpUpstreamClient's session pools
-        per host is already live by the time the game's first REST call
-        (room creation, or Blobcast's own GET /room) makes its own request -
-        the request that would otherwise pay a full TCP+TLS handshake on top
-        of zapret's own fragmentation overhead right when the user is
-        waiting on it. Idea borrowed from Flowseal's tg-ws-proxy, whose WS
-        pool warms connections the same way before a client needs one (see
-        CREDITS.md).
+    def health_status(self) -> dict | None:
+        """What the last health-check round found - see _health_check_loop.
+        None means "nothing to report": disabled, bridge not running, or no
+        round has completed yet. Read fresh on every call rather than cached
+        further up, the same reasoning status() already follows."""
+        return dict(self._health) if self._health is not None else None
 
-        Waits for WinDivert to actually be in the packet path first - the
-        same settle time diagnostics.py's strategy suite uses. Firing
-        earlier would just be a plain cold connect zapret never touched, no
-        different from not pre-warming at all.
+    async def _health_check_loop(self) -> None:
+        """Background reachability re-check while the bridge is running -
+        also what keeps the shared session's connection pool warm for the
+        game's first real request, a job that used to be a separate one-shot
+        _prewarm_upstream firing once at start and throwing its result away.
 
-        Both upstreams in parallel, not sequentially: neither depends on the
-        other, and halving the exposure window before the user might act
-        costs nothing extra to write. Silent on failure by design: if either
-        doesn't land in time, that game's own first request just does its
-        normal cold connect, exactly as before this existed."""
+        Merged into one mechanism because that split never earned its keep:
+        aiohttp's default connector recycles an idle connection after 15s,
+        which is shorter than most players take to actually reach a game's
+        "create room" screen after toggling the bridge on - a lone prewarm
+        at start() almost never survived long enough to still be warm when
+        it mattered. This loop's FIRST round targets that same gap (see the
+        settle-wait below), and unlike the old prewarm, a failure there is
+        not silently discarded - it becomes the first data point in
+        `failures` like any other round.
+
+        A round is skipped (see RECENT_ACTIVITY_SKIP_S below) rather than run
+        if real game traffic just used the bridge - both because that traffic
+        is itself fresher evidence than a synthetic probe, and to avoid this
+        loop's own connections opening through the same Zapret process right
+        alongside a real exchange.
+
+        Only ever started from _start() when health_check.enabled - like
+        every other Settings change that affects a running bridge (strategy,
+        port, profile), turning this off mid-session takes effect on the
+        next start(), not instantly. Cancelled from _stop().
+
+        Never lets an exception escape the loop itself: one bad round (a
+        probe_targets failure is already caught inside probe_targets, but a
+        targets_for() call reading a profile mid-edit is not) must not
+        silently kill the task and leave the banner stuck on its last answer
+        for the rest of the session."""
+        # Waits for WinDivert to actually be in the packet path before the
+        # FIRST round only - the same settle time diagnostics.py's strategy
+        # suite (and the old prewarm) used. Probing earlier would just be a
+        # plain cold connect zapret never touched. Skipped entirely when
+        # zapret is off: there is no settling to wait for.
         if self._config.zapret.enabled:
             await asyncio.sleep(STRATEGY_SETTLE_S)
-        http_client = self._http_client
-        if http_client is None:
-            return
-        upstreams = [self._config.profiles.active(kind).upstream for kind in ("ecast", "blobcast")]
-        await asyncio.gather(*(self._prewarm_one(http_client, upstream) for upstream in upstreams))
 
-    async def _prewarm_one(self, http_client, upstream: str) -> None:
-        try:
-            await http_client.request("GET", upstream, headers={}, data=None)
-            logger.debug("upstream connection pre-warmed: %s", upstream)
-        except Exception as exc:
-            logger.debug("upstream pre-warm failed (harmless): %s", exc)
+        failures = 0
+        first_round = True
+        while True:
+            if not first_round:
+                await asyncio.sleep(HEALTH_CHECK_INTERVAL_S)
+            first_round = False
+
+            session = self._session
+            if session is None:
+                return  # stop() is tearing down; this task is about to be cancelled anyway
+
+            last_request_at = getattr(self._http_client, "last_request_at", None)
+            if last_request_at is not None and time.monotonic() - last_request_at < RECENT_ACTIVITY_SKIP_S:
+                logger.debug("connection health check: skipped, real traffic just passed through")
+                continue
+
+            try:
+                targets = targets_for("ecast", self._config.profiles) + targets_for(
+                    "blobcast", self._config.profiles
+                )
+                results = await probe_targets(session, targets)
+                ok = any(result["ok"] for result in results.values())
+            except Exception as exc:
+                logger.warning("connection health check round failed: %s", describe_exception(exc))
+                ok = False
+
+            failures = 0 if ok else failures + 1
+            healthy = failures < HEALTH_CHECK_FAILURE_THRESHOLD
+            self._health = {"ok": healthy, "consecutiveFailures": failures}
+            if failures and not healthy:
+                logger.warning("connection health check: %d consecutive failed rounds", failures)
 
     async def stop(self) -> dict:
         async with self._lock():
             return await self._stop()
 
     async def _stop(self) -> dict:
-        if self._prewarm_task is not None:
-            self._prewarm_task.cancel()
+        if self._health_task is not None:
+            self._health_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
-                await self._prewarm_task
-            self._prewarm_task = None
+                await self._health_task
+            self._health_task = None
+        # A stopped bridge has nothing live to report - a stale "degraded"
+        # flag from before the stop must not linger and outlive its own cause.
+        self._health = None
 
         if self._zapret_process.is_running:
             self._zapret_process.stop()

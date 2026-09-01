@@ -223,6 +223,11 @@ class Api(
         # Filled by main() once the startup check has run; None means it
         # has not, which reads as "nothing to report" rather than a scare.
         self._integrity = None
+        # Guards start_integrity_check/notify_ui_settled against each other -
+        # two entry points now race to start the same background hash, and
+        # only the first should win. See api/system.py's _start_integrity_check.
+        self._integrity_started = False
+        self._integrity_lock = threading.Lock()
         # Guards apply_steam_launch_options/revert_steam_launch_options
         # against a second call while one is still closing/rewriting/
         # reopening Steam - the "applying" modal's native <dialog> can be

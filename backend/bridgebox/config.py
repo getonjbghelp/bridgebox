@@ -143,6 +143,22 @@ class AppUpdateConfig(BaseModel):
     dismissed_version: str = ""
 
 
+class HealthCheckConfig(BaseModel):
+    """The background reachability re-check that runs while the bridge is up
+    - see runtime_core.RuntimeCore._health_check_loop. Separate from a
+    user-triggered "Проверить соединение": this is the same targets_for()
+    ping repeated silently every couple of minutes, so a provider's DPI
+    change surfaces as a banner instead of the user only finding out mid-game.
+
+    On by default: it is a read-only probe of the game's own servers, and its
+    first round also does the job a separate one-shot upstream pre-warm used
+    to (see _health_check_loop's own docstring for why that was folded in
+    here rather than kept apart). Read only at bridge start, same as
+    strategy/port/profile - see RESTART_SCOPE in SettingsScreen.tsx."""
+
+    enabled: bool = True
+
+
 class LoggingConfig(BaseModel):
     level: Literal["debug", "info", "warning", "error"] = "info"
     dir: str = "logs/"
@@ -598,6 +614,7 @@ class Config(BaseModel):
     paths: PathsConfig = Field(default_factory=PathsConfig)
     update: UpdateConfig = Field(default_factory=UpdateConfig)
     app_update: AppUpdateConfig = Field(default_factory=AppUpdateConfig)
+    health_check: HealthCheckConfig = Field(default_factory=HealthCheckConfig)
     proxy: ProxyConfig = Field(default_factory=ProxyConfig)
     profiles: ProfilesConfig = Field(default_factory=ProfilesConfig)
     rewrite: RewriteConfig = Field(default_factory=RewriteConfig)

@@ -944,6 +944,37 @@ def test_extract_release_ignores_a_traversal_path_in_the_archive(tmp_path: Path)
     assert not (tmp_path.parent / "bridgebox.exe").exists()
 
 
+def test_extract_release_refuses_a_traversal_hidden_after_the_internal_prefix(
+    tmp_path: Path,
+):
+    """The traversal test above uses ".." BEFORE release_root/_internal - the
+    one shape relative_to()+the INTERNAL_DIR_NAME check actually rule out,
+    since both only look at the first path segment. ".." AFTER that prefix
+    (still matching both checks) used to sail straight through: joinpath()
+    does not resolve ".." the way os.path.normpath would, so the member
+    below used to land outside internal_dest entirely instead of being
+    refused."""
+    archive = _portable_zip(
+        tmp_path / "BridgeBox_Portable-v0.1.4.zip",
+        members=_portable_release_members(
+            **{"_internal/../../../../evil.exe": b"escaped-payload"}
+        ),
+    )
+    exe_dest = tmp_path / "staged" / "staged.exe"
+    internal_dest = tmp_path / "staged" / "staged_internal"
+
+    with pytest.raises(ValueError, match="escapes the extraction root"):
+        app_update.extract_release_from_archive(archive, exe_dest, internal_dest)
+
+    # A refusal cleans up, same as the zip-bomb refusal below - a half
+    # extracted, unverified self-update must not be left in place. Before the
+    # fix, nothing here raised at all: the member silently wrote past
+    # internal_dest and extraction reported success, which is the whole bug -
+    # so pytest.raises above is already the real regression guard.
+    assert not exe_dest.exists()
+    assert not internal_dest.exists()
+
+
 def test_extract_release_refuses_a_zip_bomb(tmp_path: Path):
     """The cap is measured on the decompressed stream, not on any entry's
     own declared size - a lying header must not buy unbounded disk. Applies

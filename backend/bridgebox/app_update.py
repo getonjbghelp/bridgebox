@@ -422,10 +422,16 @@ def extract_release_from_archive(
     Every other member extracted is one found under THAT SAME top-level
     folder, at the path it has relative to it - never the archive's own
     stored absolute-ish name, which is what keeps a hostile "../../evil"
-    entry inert (unlike ZipFile.extractall, which honours them). The size
-    cap is checked against the decompressed stream rather than any entry's
-    own declared size, so a zip bomb cannot spend more disk than a real
-    release would."""
+    entry inert (unlike ZipFile.extractall, which honours them). That alone
+    only rules out ".." landing BEFORE the top-level folder or the
+    _internal/ prefix - an entry like "<release_root>/_internal/../../evil"
+    still matches both, since both checks only look at the FIRST path
+    segment. The resolved-path check right before each _internal/ write
+    catches that: pathlib's joinpath() does not strip ".." the way
+    os.path.normpath would, so nothing upstream of it actually stops such a
+    member from landing outside internal_dest. The size cap is checked
+    against the decompressed stream rather than any entry's own declared
+    size, so a zip bomb cannot spend more disk than a real release would."""
     archive = Path(archive)
     exe_dest = Path(exe_dest)
     internal_dest = Path(internal_dest)
@@ -475,7 +481,26 @@ def extract_release_from_archive(
                 continue  # not under the same top-level folder as the exe
             if not relative.parts or relative.parts[0] != INTERNAL_DIR_NAME:
                 continue  # zapret/, certs/, config.yaml, ... - not ours to touch
-            _write_member(info, internal_dest.joinpath(*relative.parts[1:]))
+
+            # SECURITY FIX (path traversal / zip-slip). relative_to() and the
+            # INTERNAL_DIR_NAME check above both only look at the first path
+            # segment - an entry named e.g.
+            # "<release_root>/_internal/../../../../evil.exe" passes both,
+            # and joinpath() below does not resolve ".." the way
+            # os.path.normpath would, so without this the target could land
+            # anywhere the (Administrator-elevated) update process can write.
+            # Same is_relative_to()-on-a-resolved-path pattern config.py's
+            # zapret.dir validator and zapret/process.py's _allowed_root
+            # check already use for this exact class of problem.
+            target = internal_dest.joinpath(*relative.parts[1:]).resolve()
+            if not target.is_relative_to(internal_dest.resolve()):
+                exe_dest.unlink(missing_ok=True)
+                shutil.rmtree(internal_dest, ignore_errors=True)
+                raise ValueError(
+                    f"{archive.name} has a member that escapes the extraction "
+                    f"root: {info.filename!r} - refusing"
+                )
+            _write_member(info, target)
             found_internal = True
 
     if not found_internal:
