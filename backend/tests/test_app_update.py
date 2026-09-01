@@ -521,144 +521,6 @@ async def test_download_exe_refuses_an_oversized_response():
         )
 
 
-# ---- replace_running_exe / cleanup_stale_files -----------------------------
-
-
-def test_replace_running_exe_swaps_the_file_and_returns_the_backup_path(tmp_path: Path):
-    current = tmp_path / "BridgeBox.exe"
-    current.write_bytes(b"old")
-    new = tmp_path / "BridgeBox.exe.new"
-    new.write_bytes(b"new")
-
-    backup = app_update.replace_running_exe(new, current)
-
-    assert current.read_bytes() == b"new"
-    assert backup == tmp_path / "BridgeBox.exe.old"
-    assert backup.read_bytes() == b"old"
-    assert not new.exists()
-
-
-def test_replace_running_exe_overwrites_a_leftover_backup_from_a_prior_update(tmp_path: Path):
-    current = tmp_path / "BridgeBox.exe"
-    current.write_bytes(b"old")
-    (tmp_path / "BridgeBox.exe.old").write_bytes(b"stale-from-last-time")
-    new = tmp_path / "BridgeBox.exe.new"
-    new.write_bytes(b"new")
-
-    app_update.replace_running_exe(new, current)
-
-    assert (tmp_path / "BridgeBox.exe.old").read_bytes() == b"old"
-
-
-def test_replace_running_exe_rolls_back_if_the_final_move_fails(tmp_path: Path, monkeypatch):
-    current = tmp_path / "BridgeBox.exe"
-    current.write_bytes(b"old")
-    new = tmp_path / "BridgeBox.exe.new"
-    new.write_bytes(b"new")
-
-    import os as os_module
-
-    real_replace = os_module.replace
-    calls = []
-
-    def flaky_replace(src, dst):
-        calls.append((str(src), str(dst)))
-        if str(src) == str(new):
-            raise OSError("simulated failure moving the new exe into place")
-        return real_replace(src, dst)
-
-    monkeypatch.setattr(app_update.os, "replace", flaky_replace)
-
-    with pytest.raises(OSError):
-        app_update.replace_running_exe(new, current)
-
-    assert current.read_bytes() == b"old", "must still be launchable after a failed swap"
-
-
-def test_replace_running_exe_retries_a_locked_rename_then_succeeds(tmp_path: Path, monkeypatch):
-    current = tmp_path / "BridgeBox.exe"
-    current.write_bytes(b"old")
-    new = tmp_path / "BridgeBox.exe.new"
-    new.write_bytes(b"new")
-
-    import os as os_module
-
-    real_replace = os_module.replace
-    calls = {"n": 0}
-
-    def locked_once_replace(src, dst):
-        if str(src) == str(new) and calls["n"] == 0:
-            calls["n"] += 1
-            exc = OSError("locked by an antivirus scan")
-            exc.winerror = 5
-            raise exc
-        return real_replace(src, dst)
-
-    monkeypatch.setattr(app_update.os, "replace", locked_once_replace)
-    slept = []
-
-    app_update.replace_running_exe(new, current, sleep=slept.append)
-
-    assert current.read_bytes() == b"new"
-    assert slept == [app_update.REPLACE_RETRY_DELAY_S]
-
-
-def test_replace_running_exe_gives_up_after_the_retry_budget_on_a_persistent_lock(
-    tmp_path: Path, monkeypatch
-):
-    current = tmp_path / "BridgeBox.exe"
-    current.write_bytes(b"old")
-    new = tmp_path / "BridgeBox.exe.new"
-    new.write_bytes(b"new")
-
-    import os as os_module
-
-    real_replace = os_module.replace
-
-    def always_locked_replace(src, dst):
-        if str(src) == str(new):
-            exc = OSError("still locked")
-            exc.winerror = 32
-            raise exc
-        return real_replace(src, dst)
-
-    monkeypatch.setattr(app_update.os, "replace", always_locked_replace)
-
-    with pytest.raises(OSError):
-        app_update.replace_running_exe(new, current, sleep=lambda _s: None)
-
-    assert current.read_bytes() == b"old", "must still be launchable after giving up"
-
-
-def test_replace_running_exe_fixes_permissions_before_the_first_rename(
-    tmp_path: Path, monkeypatch
-):
-    """Order matters: after the first rename has already failed is too late -
-    same reasoning, same test shape as zapret/update.py's own
-    test_install_release_fixes_permissions_before_touching_anything."""
-    current = tmp_path / "BridgeBox.exe"
-    current.write_bytes(b"old")
-    new = tmp_path / "BridgeBox.exe.new"
-    new.write_bytes(b"new")
-
-    order: list[str] = []
-    monkeypatch.setattr(
-        app_update, "grant_full_control", lambda path, **kw: order.append("icacls") or True
-    )
-    real_replace = app_update.os.replace
-    monkeypatch.setattr(
-        app_update.os, "replace",
-        lambda src, dst: order.append("replace") or real_replace(src, dst),
-    )
-
-    app_update.replace_running_exe(new, current)
-
-    assert order[0] == "icacls"
-
-
-# ---- replace_running_internal -----------------------------------------------
-
-
 def _write_dir(path: Path, files: dict[str, bytes]) -> Path:
     for name, data in files.items():
         target = path / name
@@ -667,58 +529,7 @@ def _write_dir(path: Path, files: dict[str, bytes]) -> Path:
     return path
 
 
-def test_replace_running_internal_swaps_the_folder_and_returns_the_backup_path(
-    tmp_path: Path,
-):
-    current = _write_dir(tmp_path / "_internal", {"base_library.zip": b"old"})
-    new = _write_dir(tmp_path / "_internal.new", {"base_library.zip": b"new"})
-
-    backup = app_update.replace_running_internal(new, current)
-
-    assert (current / "base_library.zip").read_bytes() == b"new"
-    assert backup == tmp_path / "_internal.old"
-    assert (backup / "base_library.zip").read_bytes() == b"old"
-    assert not new.exists()
-
-
-def test_replace_running_internal_returns_none_when_there_was_nothing_to_back_up(
-    tmp_path: Path,
-):
-    """An old onefile install has no _internal/ at all - the very first
-    onedir update just moves the staged folder into place, nothing to back
-    up or roll back to."""
-    new = _write_dir(tmp_path / "_internal.new", {"base_library.zip": b"new"})
-    current = tmp_path / "_internal"
-    assert not current.exists()
-
-    backup = app_update.replace_running_internal(new, current)
-
-    assert backup is None
-    assert (current / "base_library.zip").read_bytes() == b"new"
-    assert not new.exists()
-
-
-def test_replace_running_internal_rolls_back_if_the_final_move_fails(
-    tmp_path: Path, monkeypatch
-):
-    current = _write_dir(tmp_path / "_internal", {"base_library.zip": b"old"})
-    new = _write_dir(tmp_path / "_internal.new", {"base_library.zip": b"new"})
-
-    real_replace = app_update.os.replace
-
-    def flaky_replace(src, dst):
-        if str(src) == str(new):
-            raise OSError("simulated failure moving the new _internal into place")
-        return real_replace(src, dst)
-
-    monkeypatch.setattr(app_update.os, "replace", flaky_replace)
-
-    with pytest.raises(OSError):
-        app_update.replace_running_internal(new, current)
-
-    assert (current / "base_library.zip").read_bytes() == b"old", (
-        "must still be launchable after a failed swap"
-    )
+# ---- cleanup_stale_files -----------------------------------------------------
 
 
 def test_cleanup_stale_files_removes_both_a_leftover_backup_and_stage_file(tmp_path: Path):
@@ -727,10 +538,11 @@ def test_cleanup_stale_files_removes_both_a_leftover_backup_and_stage_file(tmp_p
     (tmp_path / "BridgeBox.exe.old").write_bytes(b"stale-backup")
     (tmp_path / "BridgeBox.exe.new").write_bytes(b"stale-stage")
 
-    app_update.cleanup_stale_files(current)
+    swapped = app_update.cleanup_stale_files(current)
 
     assert not (tmp_path / "BridgeBox.exe.old").exists()
     assert not (tmp_path / "BridgeBox.exe.new").exists()
+    assert swapped is True
 
 
 def test_cleanup_stale_files_also_removes_a_leftover_internal_backup_and_stage_dir(
@@ -745,14 +557,100 @@ def test_cleanup_stale_files_also_removes_a_leftover_internal_backup_and_stage_d
     (tmp_path / "_internal.new" / "base_library.zip").parent.mkdir()
     (tmp_path / "_internal.new" / "base_library.zip").write_bytes(b"stale-stage")
 
-    app_update.cleanup_stale_files(current)
+    swapped = app_update.cleanup_stale_files(current)
 
     assert not (tmp_path / "_internal.old").exists()
     assert not (tmp_path / "_internal.new").exists()
+    assert swapped is True
 
 
 def test_cleanup_stale_files_is_a_silent_noop_when_nothing_is_there(tmp_path: Path):
-    app_update.cleanup_stale_files(tmp_path / "BridgeBox.exe")  # must not raise
+    swapped = app_update.cleanup_stale_files(tmp_path / "BridgeBox.exe")  # must not raise
+    assert swapped is False
+
+
+def test_cleanup_stale_files_reports_no_swap_when_only_a_stage_file_is_left(tmp_path: Path):
+    """A leftover .new with no matching .old means a download never got as
+    far as the relaunch script touching anything real - main() must not
+    re-baseline integrity over a swap that never happened."""
+    current = tmp_path / "BridgeBox.exe"
+    current.write_bytes(b"current")
+    (tmp_path / "BridgeBox.exe.new").write_bytes(b"interrupted-download")
+
+    swapped = app_update.cleanup_stale_files(current)
+
+    assert swapped is False
+
+
+# ---- build_relaunch_script ---------------------------------------------------
+
+
+def _script_paths(tmp_path: Path):
+    return dict(
+        pid=4242,
+        exe_path=tmp_path / "BridgeBox.exe",
+        exe_stage=tmp_path / "BridgeBox.exe.new",
+        internal_path=tmp_path / "_internal",
+        internal_stage=tmp_path / "_internal.new",
+    )
+
+
+def test_build_relaunch_script_waits_for_the_given_pid(tmp_path: Path):
+    script = app_update.build_relaunch_script(**_script_paths(tmp_path))
+    assert "Wait-Process -Id 4242" in script
+    assert f"-Timeout {app_update.RELAUNCH_EXIT_TIMEOUT_S}" in script
+
+
+def test_build_relaunch_script_grants_permissions_on_both_paths_before_any_move(tmp_path: Path):
+    paths = _script_paths(tmp_path)
+    script = app_update.build_relaunch_script(**paths)
+
+    icacls_line = f'icacls "{paths["internal_path"]}"'
+    first_move = "call :move_retry"
+    assert script.index(icacls_line) < script.index(first_move), (
+        "an icacls grant must run before any rename is attempted, same "
+        "ordering zapret/update.py's own install_release uses"
+    )
+    assert app_update.SID_ADMINISTRATORS in script
+    assert app_update.SID_SYSTEM in script
+
+
+def test_build_relaunch_script_swaps_internal_before_the_exe(tmp_path: Path):
+    """_internal/ is the half that was actually failing in the wild - a
+    failure there must leave the exe untouched, so it has to be attempted
+    first."""
+    paths = _script_paths(tmp_path)
+    script = app_update.build_relaunch_script(**paths)
+
+    internal_move = f'call :move_retry "{paths["internal_path"]}"'
+    exe_move = f'call :move_retry "{paths["exe_path"]}"'
+    assert script.index(internal_move) < script.index(exe_move)
+
+
+def test_build_relaunch_script_starts_the_new_exe_and_deletes_itself(tmp_path: Path):
+    paths = _script_paths(tmp_path)
+    script = app_update.build_relaunch_script(**paths)
+
+    assert f'start "" "{paths["exe_path"]}"' in script
+    assert 'del "%~f0"' in script
+
+
+def test_build_relaunch_script_rolls_back_internal_if_the_exe_swap_fails(tmp_path: Path):
+    """Both halves must land or neither does - the one pairing this app
+    cannot start with (a new exe against an old _internal/, or vice versa)
+    must never be left behind by a partial failure."""
+    paths = _script_paths(tmp_path)
+    script = app_update.build_relaunch_script(**paths)
+
+    # The exe-swap failure branch must move _internal/ back to its own stage
+    # path and its backup back to the live path - both moves the successful
+    # path already did, undone.
+    rollback_stage = f'call :move_retry "{paths["internal_path"]}" "{paths["internal_stage"]}"'
+    rollback_restore = (
+        f'call :move_retry "{paths["internal_path"]}.old" "{paths["internal_path"]}"'
+    )
+    assert rollback_stage in script
+    assert rollback_restore in script
 
 
 # ---- verify_exe_digest -----------------------------------------------------
@@ -994,3 +892,178 @@ def test_extract_release_refuses_a_zip_bomb(tmp_path: Path):
 
     assert not exe_dest.exists()
     assert not internal_dest.exists()
+
+
+# ---- synthetic end-to-end: real HTTP, not a mocked session ------------------
+
+
+def _release_server_handler(routes: dict[str, tuple[bytes, str]]):
+    """A minimal http.server handler serving whatever `routes` holds - a
+    factory rather than a bare class, since BaseHTTPRequestHandler wants its
+    behaviour on the class itself and this needs a fresh one per test,
+    closing over that test's own `routes` dict."""
+    import http.server
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            entry = routes.get(self.path)
+            if entry is None:
+                self.send_response(404)
+                self.end_headers()
+                return
+            body, content_type = entry
+            self.send_response(200)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, format, *args):  # noqa: A002 - stdlib's own name
+            pass  # keep test output free of a request log line per fetch
+
+    return Handler
+
+
+@pytest.fixture
+def release_server():
+    """A real ThreadingHTTPServer on a free localhost port, torn down at the
+    end of the test. Yields (base_url, routes) - a test fills `routes` in
+    (path -> (body_bytes, content_type)) before making requests."""
+    import http.server
+    import threading
+
+    routes: dict[str, tuple[bytes, str]] = {}
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _release_server_handler(routes))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_address[1]}", routes
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+
+
+async def test_self_update_pipeline_end_to_end_against_a_real_http_server(
+    tmp_path: Path, release_server
+):
+    """The rest of this file drives fetch_latest_release/download_exe
+    against a hand-mocked session, which proves the parsing and retry logic
+    but never actually opens a socket. This drives the same two functions
+    against a REAL local server instead - real DNS-free connect, real
+    chunked streaming, a real Content-Length - through to a real digest
+    check and a real extraction, the same sequence
+    Api._apply_app_update_coro runs in production. GitHub itself is
+    obviously not reachable from a test, so this uses the test-only
+    allowed_hosts/require_https override _require_allowed_host exists for -
+    every production call site keeps the real github.com/https-only check."""
+    import hashlib
+    import json
+
+    import aiohttp
+
+    base_url, routes = release_server
+
+    archive_src = tmp_path / "source.zip"
+    _portable_zip(archive_src, members=_portable_release_members())
+    zip_bytes = archive_src.read_bytes()
+    digest = "sha256:" + hashlib.sha256(zip_bytes).hexdigest()
+
+    routes["/download/BridgeBox_Portable.zip"] = (zip_bytes, "application/zip")
+    payload = {
+        "tag_name": "v9.9.9",
+        "name": "9.9.9",
+        "body": "synthetic test release",
+        "html_url": f"{base_url}/releases/tag/v9.9.9",
+        "assets": [
+            {
+                "name": "BridgeBox_Portable.zip",
+                "browser_download_url": f"{base_url}/download/BridgeBox_Portable.zip",
+                "size": len(zip_bytes),
+                "digest": digest,
+            }
+        ],
+    }
+    routes["/releases/latest"] = (json.dumps(payload).encode("utf-8"), "application/json")
+
+    local_only = frozenset({"127.0.0.1"})
+    async with aiohttp.ClientSession() as session:
+        release = await app_update.fetch_latest_release(
+            session,
+            url=f"{base_url}/releases/latest",
+            allowed_hosts=local_only,
+            require_https=False,
+        )
+        assert release.version == "9.9.9"
+        assert release.asset_is_archive is True
+        assert release.asset_digest == digest
+
+        downloaded = tmp_path / "downloaded.zip"
+        await app_update.download_exe(
+            session, release.asset_url, downloaded, allowed_hosts=local_only, require_https=False,
+        )
+
+    assert downloaded.read_bytes() == zip_bytes
+
+    app_update.verify_exe_digest(downloaded, release.asset_digest)  # must not raise
+
+    exe_stage = tmp_path / "staged.exe"
+    internal_stage = tmp_path / "staged_internal"
+    result = app_update.extract_release_from_archive(downloaded, exe_stage, internal_stage)
+
+    assert result == exe_stage
+    assert exe_stage.read_bytes() == b"MZ-exe-payload"
+    assert (internal_stage / "base_library.zip").read_bytes() == b"internal-payload"
+    # zapret/ and config.yaml are the release's own, never self-update's to touch.
+    assert not (internal_stage / "zapret").exists()
+    assert not (tmp_path / "config.yaml").exists()
+
+
+async def test_self_update_pipeline_end_to_end_refuses_a_tampered_download(
+    tmp_path: Path, release_server
+):
+    """Same real server, but the bytes actually served do not match the
+    digest GitHub "reported" - the one failure mode this whole pipeline
+    exists to catch (see verify_exe_digest's own docstring: a truncated or
+    mangled-in-transit download looks identical to a clean one on the wire)."""
+    import hashlib
+    import json
+
+    import aiohttp
+
+    base_url, routes = release_server
+
+    archive_src = tmp_path / "source.zip"
+    _portable_zip(archive_src, members=_portable_release_members())
+    real_bytes = archive_src.read_bytes()
+    wrong_digest = "sha256:" + hashlib.sha256(b"not what gets served").hexdigest()
+
+    routes["/download/BridgeBox_Portable.zip"] = (real_bytes, "application/zip")
+    payload = {
+        "tag_name": "v9.9.9",
+        "html_url": f"{base_url}/releases/tag/v9.9.9",
+        "assets": [
+            {
+                "name": "BridgeBox_Portable.zip",
+                "browser_download_url": f"{base_url}/download/BridgeBox_Portable.zip",
+                "size": len(real_bytes),
+                "digest": wrong_digest,
+            }
+        ],
+    }
+    routes["/releases/latest"] = (json.dumps(payload).encode("utf-8"), "application/json")
+
+    local_only = frozenset({"127.0.0.1"})
+    async with aiohttp.ClientSession() as session:
+        release = await app_update.fetch_latest_release(
+            session,
+            url=f"{base_url}/releases/latest",
+            allowed_hosts=local_only,
+            require_https=False,
+        )
+        downloaded = tmp_path / "downloaded.zip"
+        await app_update.download_exe(
+            session, release.asset_url, downloaded, allowed_hosts=local_only, require_https=False,
+        )
+
+    with pytest.raises(ValueError, match="checksum"):
+        app_update.verify_exe_digest(downloaded, release.asset_digest)

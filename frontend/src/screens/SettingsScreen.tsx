@@ -577,7 +577,10 @@ export function SettingsScreen() {
       confirmLabel: strings.settings.updateRestartButton,
       danger: true,
       action: () => {
-        callBridge('restart_app').catch(() => {})
+        // Not restart_app: applying a self-update needs the dedicated
+        // relaunch helper (see Api.restart_after_app_update) - the swap
+        // cannot happen in this process, see app_update.py's own docstring.
+        callBridge('restart_after_app_update').catch(() => {})
       },
     })
   }

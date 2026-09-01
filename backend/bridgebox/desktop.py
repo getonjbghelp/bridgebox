@@ -36,6 +36,7 @@ from .runtime import BridgeRuntime
 from .runtime_core import RuntimeCore
 from .version import app_version, build_channel, display_version, release_label
 from . import app_update
+from . import integrity
 from .zapret.strategies import resolve_zapret_layout
 
 logger = logging.getLogger(__name__)
@@ -462,6 +463,32 @@ class Api(
             return {"ok": False, "error": describe_exception(exc)}
 
 
+def reconcile_self_update(exe_path: Path | None, project_root: Path) -> None:
+    """Clean up whatever a self-update's relaunch script left behind, and
+    record a fresh integrity baseline if it actually swapped
+    bridgebox.exe/_internal/ before this process started.
+
+    The `.old` backup a completed swap leaves behind (see
+    app_update.build_relaunch_script), or the `.new` stage of one that
+    downloaded but never got applied (verify_exe_digest refused it, or the
+    app closed before "Перезапустить сейчас"), can only be cleaned up now:
+    the relaunch script's own handle on `.old` is long gone by the time THIS
+    process exists to see it. A `.old` backup having existed means
+    integrity.py's baseline still describes the OLD files - without
+    re-recording it here, the very first launch after a self-update would
+    show "files were modified" over the update it just installed, not over
+    tampering. `exe_path` is None in dev mode (running_exe_path() has no
+    installed exe to report), where this is a no-op; best-effort otherwise,
+    since a failure here should never stop the app from starting."""
+    if exe_path is None:
+        return
+    try:
+        if app_update.cleanup_stale_files(exe_path):
+            integrity.write_manifest(project_root)
+    except Exception:
+        logger.exception("could not clean up leftover self-update files - continuing")
+
+
 def _deep_merge(base: dict, patch: dict) -> None:
     """Merge a settings patch into a config dump, in place.
 
@@ -525,17 +552,7 @@ def main(
     except Exception:
         logger.exception("could not migrate config.yaml - continuing with what loaded")
 
-    # Leftover from a self-update that swapped the .exe on a previous run, or
-    # one that downloaded but never finished (see app_update.replace_running_exe
-    # / verify_exe_digest) - the old image could not be deleted while that
-    # process still held it, so this is where it finally goes. Frozen-only
-    # (running_exe_path() is None in dev) and best-effort.
-    exe_path = app_update.running_exe_path()
-    if exe_path is not None:
-        try:
-            app_update.cleanup_stale_files(exe_path)
-        except Exception:
-            logger.exception("could not clean up leftover self-update files - continuing")
+    reconcile_self_update(app_update.running_exe_path(), PROJECT_ROOT)
 
     log_buffer = LogBuffer()
     logging_config = config.logging.model_copy(

@@ -14,14 +14,40 @@ would start a new bridgebox.exe against a mismatched runtime, so both move
 together or neither does.
 
 The swap itself never touches config.yaml, logs/, certs/ or zapret/ - it only
-ever writes bridgebox.exe and _internal/ next to sys.executable. Windows
-opens a running executable's image (and a loaded DLL inside _internal/) with
-FILE_SHARE_DELETE, so renaming it - not overwriting it - succeeds even while
-it is mapped into this very process; that is the whole trick
-replace_running_exe/replace_running_internal rely on, generalised in
-_replace_path. The renamed-away originals cannot be deleted until this
-process exits, so cleanup_stale_files is the other half - called once at the
-start of the NEXT launch, once nothing holds them anymore.
+ever writes bridgebox.exe and _internal/ next to sys.executable.
+
+WHY THE SWAP DOES NOT HAPPEN IN THIS PROCESS
+---------------------------------------------
+An earlier version of this module tried to rename bridgebox.exe and
+_internal/ in place while still running, on the assumption that Windows opens
+a running executable's image (and a loaded DLL inside _internal/) with
+FILE_SHARE_DELETE. That is true of the exe's own process image, but not
+reliably true of the DLLs and compiled extensions _internal/ holds, which get
+LoadLibrary'd by the Python runtime and stay mapped for the process's whole
+life - and a rename Windows sees as touching any handle without
+FILE_SHARE_DELETE fails with WinError 5, indistinguishable on the surface
+from the ACL and antivirus-scan causes below. Confirmed against a real
+failure (a user's log showing exactly this rename failing, every retry, with
+nothing else running that could hold it) and against PyInstaller's own
+maintainers describing the identical limitation for onedir self-updaters:
+"you cannot replace or rename the _internal folder while the application is
+actively running... [use] a launcher/updater process separate from the main
+application" (pyinstaller/pyinstaller#9263). A second bridgebox.exe process
+cannot be that launcher either - it would LoadLibrary the very same
+_internal/ DLLs into itself and hit the identical lock - so the actual swap
+now happens from a plain batch script (build_relaunch_script) that never
+touches _internal/ at all, spawned detached right before this process exits
+and waits for it to be gone before touching anything. See
+desktop.Api.restart_after_app_update for where that is triggered, and
+build_relaunch_script's own docstring for the script itself.
+
+This module's own job stopped at staging: download, verify, and extract into
+`.new` paths beside the real ones (stage_path_for) - none of which touches
+the live install, so all of it is still safe to do while running. The
+renamed-away originals the relaunch script produces cannot be deleted until
+the NEW process is running (nothing holds them by then), so
+cleanup_stale_files is the other half - called once at the start of the NEXT
+launch.
 
 Two things a self-replacing, admin-elevated binary cannot skip, unlike a
 "here's a browser download" flow:
@@ -35,24 +61,13 @@ Two things a self-replacing, admin-elevated binary cannot skip, unlike a
   announced would still "succeed" on a length check, and a corrupted CDN
   edge or a proxy that mangles bytes in transit both slip past HTTPS
   (that only guarantees the channel, not that every byte survived).
-- _replace_path retries the rename on a locked file/folder (winerror 5/32),
-  same class of failure zapret/update.py already retries around, but with
-  two sources here instead of one: an antivirus on-write/on-access scan of
-  the freshly-downloaded exe (an unsigned, previously-unseen binary is
-  exactly what triggers a cloud-lookup scan that can run several seconds,
-  not the sub-second case a signed installer gets), AND this process's own
-  integrity-check background thread, which can still be mid-hash of the OLD
-  install (integrity.py's WATCHED_GLOBS covers bridgebox.exe and
-  _internal/**/*) if the update is triggered in the first moment after
-  launch - Python's open() on Windows does not request FILE_SHARE_DELETE
-  (unlike Rust/Go), so that read handle blocks the rename exactly like an
-  antivirus one would. Both are self-resolving, neither is fast enough to
-  assume away.
-- A third WinError 5 source waiting cannot fix: a genuinely wrong ACL. A
-  portable install lives wherever the user unzipped it, not somewhere this
-  app ever set permissions on, so _replace_path calls zapret/update.py's own
-  grant_full_control before the first rename - same fix, same reasoning,
-  reused rather than duplicated.
+- The relaunch script grants Administrators/SYSTEM full control on both
+  paths before swapping (a portable install lives wherever the user unzipped
+  it, not somewhere this app ever set permissions on) and retries each
+  rename briefly - an antivirus on-write/on-access scan of the
+  freshly-staged files is a real, self-resolving cause of the same
+  WinError 5, distinct from the process-lifetime lock above and NOT solved
+  by moving the swap out of this process.
 
 Same shape as zapret/update.py's release-fetching/download half on purpose -
 matching call sites read faster - but this module's own allowlist and
@@ -62,17 +77,14 @@ from __future__ import annotations
 
 import hashlib
 import logging
-import os
 import re
 import shutil
 import sys
-import time
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
-from .winlock import retry_locked as _retry_locked_base
-from .zapret.update import grant_full_control
+from .zapret.update import SID_ADMINISTRATORS, SID_SYSTEM
 
 logger = logging.getLogger(__name__)
 
@@ -125,15 +137,20 @@ DOWNLOAD_RETRY_DELAY_S = 1.0
 _STAGE_SUFFIX = ".new"
 _BACKUP_SUFFIX = ".old"
 
-# Wider than zapret/update.py's own 5x0.5s budget for its (different) lock
-# source: a kernel driver unloading is a bounded, fast OS operation, but a
+# How long the relaunch helper waits for this process to exit before giving
+# up and attempting the swap anyway - generous, but bounded so a stuck
+# shutdown cannot hang the helper (and therefore the update) forever.
+RELAUNCH_EXIT_TIMEOUT_S = 30
+
+# Retry budget for the swap itself, run from the helper AFTER this process
+# has exited - see build_relaunch_script. What is left to wait out at that
+# point is not this process's own loaded DLLs (they are gone with it) but
+# the same transient cause zapret/update.py's own sweep retries around: a
 # cloud-lookup antivirus scan of a brand new, unsigned, never-seen-before
-# executable is not - Defender's cloud check alone can run several seconds
-# on a slow link. 10x1.5s (~15s worst case) is sized for that, not the
-# driver case - both this and the integrity-thread race resolve well within
-# it in the common case, so this budget mostly sits unused.
-REPLACE_RETRY_ATTEMPTS = 10
-REPLACE_RETRY_DELAY_S = 1.5
+# file, which can run several seconds on a slow link. 10x1.5s (~15s worst
+# case), same budget the old in-process retry this design replaces used.
+RELAUNCH_RETRY_ATTEMPTS = 10
+RELAUNCH_RETRY_DELAY_S = 1.5
 
 
 @dataclass
@@ -183,7 +200,14 @@ def is_critical(name: str, body: str) -> bool:
     return CRITICAL_MARKER in haystack
 
 
-async def fetch_latest_release(session, *, url: str = RELEASES_URL) -> AppRelease:
+async def fetch_latest_release(
+    session,
+    *,
+    url: str = RELEASES_URL,
+    allowed_hosts: frozenset[str] = ALLOWED_HOSTS,
+    require_https: bool = True,
+) -> AppRelease:
+    """`allowed_hosts`/`require_https` - see _require_allowed_host."""
     async with session.get(url, headers={"Accept": "application/vnd.github+json"}) as response:
         response.raise_for_status()
         payload = await response.json()
@@ -193,7 +217,7 @@ async def fetch_latest_release(session, *, url: str = RELEASES_URL) -> AppReleas
     name = str(payload.get("name") or tag)
     notes = str(payload.get("body") or "")
     html_url = str(payload.get("html_url") or f"https://github.com/{REPO}/releases/latest")
-    _require_allowed_host(html_url)
+    _require_allowed_host(html_url, allowed_hosts=allowed_hosts, require_https=require_https)
 
     chosen = _pick_update_asset(payload.get("assets") or [])
     asset_url: str | None = None
@@ -202,7 +226,7 @@ async def fetch_latest_release(session, *, url: str = RELEASES_URL) -> AppReleas
     asset_is_archive = False
     if chosen is not None:
         candidate = str(chosen.get("browser_download_url") or "")
-        _require_allowed_host(candidate)
+        _require_allowed_host(candidate, allowed_hosts=allowed_hosts, require_https=require_https)
         asset_url = candidate
         asset_size = int(chosen.get("size") or 0)
         # None on an asset uploaded before GitHub added this (June 2025) -
@@ -297,13 +321,22 @@ def _pick_update_asset(assets: list) -> dict | None:
     return zips[0]
 
 
-def _require_allowed_host(url: str) -> None:
+def _require_allowed_host(
+    url: str, *, allowed_hosts: frozenset[str] = ALLOWED_HOSTS, require_https: bool = True
+) -> None:
+    """`allowed_hosts`/`require_https` exist for exactly one caller outside
+    this module: test_app_update.py's synthetic end-to-end test, which
+    downloads a real archive from a real (plain-http, localhost) server to
+    exercise fetch_latest_release/download_exe's actual networking rather
+    than a hand-mocked session - GitHub's own CDN is obviously not reachable
+    from a test. Every production call site uses the defaults, which are
+    exactly the check this always enforced."""
     from urllib.parse import urlparse
 
     parsed = urlparse(url)
-    if parsed.scheme != "https":
+    if require_https and parsed.scheme != "https":
         raise ValueError(f"refusing a non-https release url: {url}")
-    if parsed.hostname not in ALLOWED_HOSTS:
+    if parsed.hostname not in allowed_hosts:
         raise ValueError(f"refusing a release url on an unexpected host: {parsed.hostname}")
 
 
@@ -343,16 +376,20 @@ async def download_exe(
     attempts: int = DOWNLOAD_RETRY_ATTEMPTS,
     delay_s: float = DOWNLOAD_RETRY_DELAY_S,
     sleep=None,
+    allowed_hosts: frozenset[str] = ALLOWED_HOSTS,
+    require_https: bool = True,
 ) -> Path:
     """Stream the release's .exe asset to `dest`, aborting past max_bytes.
 
     Same retry-on-drop shape as zapret/update.py's download_archive: each
     attempt restarts from zero and truncates `dest` rather than resuming,
     because a Range request means trusting a server's byte offsets for a file
-    that becomes the next thing this app runs as."""
+    that becomes the next thing this app runs as.
+
+    `allowed_hosts`/`require_https` - see _require_allowed_host."""
     import asyncio
 
-    _require_allowed_host(url)
+    _require_allowed_host(url, allowed_hosts=allowed_hosts, require_https=require_https)
     dest = Path(dest)
     dest.parent.mkdir(parents=True, exist_ok=True)
     sleep = sleep if sleep is not None else asyncio.sleep
@@ -362,7 +399,9 @@ async def download_exe(
         try:
             async with session.get(url) as response:
                 response.raise_for_status()
-                _require_allowed_host(str(response.url))
+                _require_allowed_host(
+                    str(response.url), allowed_hosts=allowed_hosts, require_https=require_https
+                )
                 total = int(response.headers.get("Content-Length") or 0)
                 with dest.open("wb") as handle:
                     async for chunk in response.content.iter_chunked(64 * 1024):
@@ -564,22 +603,11 @@ def running_internal_dir() -> Path | None:
     other half of a onedir install, see running_exe_path(). Returned even
     when the folder does not exist yet: the one real case that happens in is
     updating an OLD onefile install (no _internal/ at all) straight to the
-    first onedir release, where _replace_path's `had_current=False` branch
-    just moves the staged folder into place with nothing to back up. None
+    first onedir release, where there is nothing there yet for the relaunch
+    script to back up - it just moves the staged folder into place. None
     only in dev mode, same as running_exe_path()."""
     exe = running_exe_path()
     return None if exe is None else exe.with_name(INTERNAL_DIR_NAME)
-
-
-def _retry_locked(op, *, sleep=time.sleep):
-    """A freshly-written exe/DLL commonly gets a brief antivirus on-write or
-    on-access scan, which holds exactly the kind of handle this retries
-    around - see winlock.retry_locked for the retry loop itself, shared
-    with zapret/update.py's own (unrelated-cause, same-winerrors) lock case."""
-    return _retry_locked_base(
-        op, what="update swap step",
-        attempts=REPLACE_RETRY_ATTEMPTS, delay_s=REPLACE_RETRY_DELAY_S, sleep=sleep,
-    )
 
 
 def _remove_path(path: Path) -> None:
@@ -592,80 +620,144 @@ def _remove_path(path: Path) -> None:
         path.unlink(missing_ok=True)
 
 
-def _replace_path(new_path: Path, current_path: Path, *, sleep=time.sleep) -> Path | None:
-    """Swap `current_path` (this process's own running exe or its loaded
-    _internal/ folder) for `new_path`, file or directory either way -
-    os.replace() renames both the same way.
-
-    Windows opens a loaded executable or DLL with FILE_SHARE_DELETE, so
-    renaming - not overwriting - the running one succeeds even while it is
-    mapped: the open handle keeps the old bytes alive under the new (backup)
-    name until this process exits. Move it aside, put the new one at the
-    real name, done - no helper process, no waiting for a lock to clear
-    itself in the common case, and a bounded retry (_retry_locked) for the
-    uncommon one.
-
-    Returns the backup path, or None if there was nothing at `current_path`
-    to back up (a onefile-to-onedir first update, where the OLD install has
-    no _internal/ at all yet - see running_internal_dir()). On any failure
-    after the first rename, rolls `current_path` back so the existing
-    install still launches next time."""
-    backup = current_path.with_name(current_path.name + _BACKUP_SUFFIX)
-    _remove_path(backup)  # leftover from an update never cleaned up
-    had_current = current_path.exists()
-    if had_current:
-        # A wrong ACL and a live handle both surface as WinError 5, and only
-        # one of them is fixed by waiting - rule the ACL out first, same as
-        # zapret/update.py's install_release does for zapret_dir.
-        grant_full_control(current_path)
-        _retry_locked(lambda: os.replace(current_path, backup), sleep=sleep)
-    try:
-        _retry_locked(lambda: os.replace(new_path, current_path), sleep=sleep)
-    except OSError:
-        if had_current:
-            _retry_locked(lambda: os.replace(backup, current_path), sleep=sleep)
-        raise
-    return backup if had_current else None
+def _old(path: Path) -> Path:
+    return path.with_name(path.name + _BACKUP_SUFFIX)
 
 
-def replace_running_exe(new_path: Path, current_path: Path, *, sleep=time.sleep) -> Path:
-    """The exe half of a self-update swap - see _replace_path. The running
-    exe always exists (this process IS it), so - unlike
-    replace_running_internal - there is always a backup to return."""
-    backup = _replace_path(new_path, current_path, sleep=sleep)
-    assert backup is not None, "the running exe must exist to have been running at all"
-    return backup
+def build_relaunch_script(
+    *,
+    pid: int,
+    exe_path: Path,
+    exe_stage: Path,
+    internal_path: Path,
+    internal_stage: Path,
+) -> str:
+    """The .bat text a self-update's "restart now" writes to disk and spawns
+    detached, right before this process exits - see
+    desktop.Api.restart_after_app_update. See this module's own docstring
+    for why the swap has to happen here and not in this process.
+
+    What the script does, in order:
+      1. Waits for `pid` (this process) to exit - PowerShell's Wait-Process,
+         not a hand-rolled poll loop, bounded by RELAUNCH_EXIT_TIMEOUT_S so a
+         stuck shutdown cannot hang the update forever.
+      2. Grants Administrators/SYSTEM full control on both paths - the same
+         ACL gap zapret/update.py's grant_full_control exists for, inlined
+         here in icacls form since there is no Python interpreter running
+         these commands to call that function from.
+      3. Renames _internal/ (current -> .old, then stage -> current), then
+         the exe the same way - each step individually retried
+         (RELAUNCH_RETRY_ATTEMPTS/DELAY_S) in case an antivirus on-write scan
+         of the freshly-staged files is still running. _internal/ goes
+         first deliberately: it is the step that was actually failing in the
+         wild, and a failure here leaves the old exe paired with the old
+         _internal/ untouched - a safe, unchanged install. Every failure
+         branch rolls back whatever already succeeded before giving up, so a
+         partial failure never leaves a new exe paired with an old
+         _internal/ (or vice versa) - the one pairing this module's own
+         docstring says cannot run.
+      4. Starts the new exe.
+      5. Deletes itself - cmd.exe opens a running .bat with FILE_SHARE_DELETE
+         (unlike LoadLibrary), so this is safe and leaves nothing behind."""
+    exe_old = _old(exe_path)
+    internal_old = _old(internal_path)
+    grant = 'icacls "{path}" /grant *{admin}:(OI)(CI)F *{system}:(OI)(CI)F /T /C >nul 2>&1'
+    return f"""@echo off
+:: BridgeBox self-update helper - finishes swapping in the version this app
+:: already downloaded and verified, then deletes itself. Safe to ignore or
+:: delete if you find this sitting in your temp folder; it means an update
+:: was interrupted before it could run.
+setlocal
+
+set "RETRIES={RELAUNCH_RETRY_ATTEMPTS}"
+
+powershell -NoProfile -Command "Wait-Process -Id {pid} -Timeout {RELAUNCH_EXIT_TIMEOUT_S} -ErrorAction SilentlyContinue" >nul 2>&1
+
+{grant.format(path=str(internal_path), admin=SID_ADMINISTRATORS, system=SID_SYSTEM)}
+{grant.format(path=str(exe_path), admin=SID_ADMINISTRATORS, system=SID_SYSTEM)}
+
+if exist "{internal_old}" rmdir /s /q "{internal_old}" >nul 2>&1
+if exist "{exe_old}" del /f /q "{exe_old}" >nul 2>&1
+
+call :move_retry "{internal_path}" "{internal_old}"
+if errorlevel 1 goto fail
+
+call :move_retry "{internal_stage}" "{internal_path}"
+if errorlevel 1 (
+    call :move_retry "{internal_old}" "{internal_path}"
+    goto fail
+)
+
+call :move_retry "{exe_path}" "{exe_old}"
+if errorlevel 1 (
+    call :move_retry "{internal_path}" "{internal_stage}"
+    call :move_retry "{internal_old}" "{internal_path}"
+    goto fail
+)
+
+call :move_retry "{exe_stage}" "{exe_path}"
+if errorlevel 1 (
+    call :move_retry "{exe_old}" "{exe_path}"
+    call :move_retry "{internal_path}" "{internal_stage}"
+    call :move_retry "{internal_old}" "{internal_path}"
+    goto fail
+)
+
+start "" "{exe_path}"
+del "%~f0"
+exit /b 0
+
+:move_retry
+set "N=%RETRIES%"
+:move_retry_loop
+move /y %1 %2 >nul 2>&1
+if not errorlevel 1 exit /b 0
+set /a N-=1
+if %N% gtr 0 (
+    ping -n 2 127.0.0.1 >nul
+    goto move_retry_loop
+)
+exit /b 1
+
+:fail
+exit /b 1
+"""
 
 
-def replace_running_internal(new_dir: Path, current_dir: Path, *, sleep=time.sleep) -> Path | None:
-    """The _internal/ half of a self-update swap - see _replace_path.
-    Unlike the exe, `current_dir` can legitimately not exist yet (updating
-    an old onefile install straight to the first onedir release), in which
-    case there is nothing to back up and this returns None."""
-    return _replace_path(new_dir, current_dir, sleep=sleep)
-
-
-def cleanup_stale_files(current_path: Path) -> None:
+def cleanup_stale_files(current_path: Path) -> bool:
     """Best-effort: delete a `.old` backup or `.new` stage file/folder a
     previous self-update left behind - the `.old` from a completed swap (see
-    _replace_path), the `.new` from one that downloaded but was never
-    finished (interrupted, or the digest check refused it - see
+    build_relaunch_script), the `.new` from one that downloaded but was
+    never finished (interrupted, or the digest check refused it - see
     verify_exe_digest). Covers both halves of a onedir install:
     `current_path` (bridgebox.exe) and its _internal/ sibling.
 
     Called once at startup. By the time this (new) process is running,
-    whatever briefly held `.old` locked (the exited old process itself, or
-    an antivirus scan) is done with it - but stays best-effort, since a
-    leftover file/folder is harmless and the next launch will try again."""
+    whatever briefly held `.old` locked (the relaunch script's own handle on
+    it, or an antivirus scan) is done with it - but stays best-effort, since
+    a leftover file/folder is harmless and the next launch will try again.
+
+    Returns whether a `.old` backup was actually found - the signal main()
+    uses to know this launch follows a self-update that just changed
+    bridgebox.exe/_internal/ under it, so it can record a fresh integrity
+    baseline instead of flagging its own update as tampering. A leftover
+    `.new` stage does not count: that means a download never got as far as
+    the relaunch script touching anything real."""
     candidates = [current_path, current_path.with_name(INTERNAL_DIR_NAME)]
+    swapped = False
     for base in candidates:
         for suffix in (_BACKUP_SUFFIX, _STAGE_SUFFIX):
             stale = base.with_name(base.name + suffix)
+            if not stale.exists():
+                continue
+            if suffix == _BACKUP_SUFFIX:
+                swapped = True
             try:
                 _remove_path(stale)
             except OSError as exc:
                 logger.warning("could not remove leftover %s - will retry next launch", stale,
                                 exc_info=exc)
+    return swapped
 
 
 def stage_path_for(current_path: Path) -> Path:

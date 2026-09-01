@@ -55,8 +55,22 @@ def test_display_version_keeps_the_patch_component():
 
 def test_display_version_does_not_leak_the_prerelease_digit():
     """_VERSION_PART.findall sees "0.1.1b1" as four numbers (0, 1, 1, 1) -
-    the parts[:3] slice is what keeps the "b1" in "b1" out of the count."""
+    the pre-release suffix is stripped by matching it explicitly, not by
+    assuming which position its digit lands in."""
     assert version_mod.display_version("0.9.9b12") == "0.9.9"
+
+
+def test_display_version_keeps_a_real_fourth_component():
+    """A genuine patch release on top of a 3-part version ("0.1.8.1") is not
+    the same shape as a pre-release digit landing in the same position - a
+    fixed "keep the first 3 parts" cut used to drop this silently."""
+    assert version_mod.display_version("0.1.8.1") == "0.1.8.1"
+
+
+def test_display_version_strips_a_prerelease_suffix_even_with_a_real_patch_part():
+    """The suffix and a real 4th component can coexist - only the matched
+    suffix goes, the patch digit in front of it stays."""
+    assert version_mod.display_version("0.1.8.1b1") == "0.1.8.1"
 
 
 def test_the_shipped_version_is_a_beta():

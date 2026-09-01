@@ -9,11 +9,11 @@ import asyncio
 import logging
 import os
 import shutil
+import subprocess
 
 import aiohttp
 
 from .. import app_update
-from .. import integrity
 from ..diagnostics import describe_exception
 from ..version import app_version
 
@@ -156,15 +156,15 @@ class AppUpdateMixin:
             return {"ok": False, "error": describe_exception(exc)}
 
     async def _apply_app_update_coro(self) -> dict:
-        """Download the newest release's portable .zip and swap BOTH halves
-        of the running onedir install in for it - bridgebox.exe and
-        _internal/ (see app_update.replace_running_exe /
-        replace_running_internal). Never touches config.yaml, logs/, certs/
-        or zapret/ - only ever writes those two, next to sys.executable.
-        Does NOT restart on its own: the frontend shows "Перезапустить
-        сейчас" once this reports done, exactly like the zapret update flow
-        already does - restarting a pywebview window from a background
-        thread is not something to do implicitly."""
+        """Download the newest release's portable .zip and stage BOTH halves
+        of the running onedir install - bridgebox.exe and _internal/ - at
+        their `.new` paths (app_update.stage_path_for). Does NOT touch the
+        live install: see app_update's own module docstring for why the
+        actual swap has to happen from a relaunch script instead, after this
+        process has exited, rather than here. The frontend shows
+        "Перезапустить сейчас" once this reports done, same as the zapret
+        update flow already does - restart_after_app_update is what that
+        button actually calls."""
         exe_path = app_update.running_exe_path()
         internal_path = app_update.running_internal_dir()
         if exe_path is None or internal_path is None:
@@ -178,11 +178,11 @@ class AppUpdateMixin:
         internal_stage = app_update.stage_path_for(internal_path)
         try:
             # The archive is a throwaway, so it goes to the temp folder. The
-            # staged exe/_internal do NOT: the swap below renames paths past
-            # each other, which only works within one volume, and temp is
-            # routinely on a different drive than the app - so both are
+            # staged exe/_internal do NOT: the relaunch script renames paths
+            # past each other, which only works within one volume, and temp
+            # is routinely on a different drive than the app - so both are
             # unpacked straight to their stage paths, next to what they will
-            # replace.
+            # eventually replace.
             archive_path = self._temp_root() / "BridgeBox-release.zip"
             async with aiohttp.ClientSession() as session:
                 release = await app_update.fetch_latest_release(session)
@@ -193,14 +193,15 @@ class AppUpdateMixin:
                     )
                 await app_update.download_exe(session, release.asset_url, archive_path)
             try:
-                # Runs before the swap, not after: the downloaded bytes get
+                # Runs before extraction, not after: the downloaded bytes get
                 # one chance to prove they are what GitHub actually shipped,
-                # and a mismatch must never become the app's own running
-                # install - see app_update.verify_exe_digest's own docstring
-                # for what this does and does not protect against. Checked
-                # against the whole zip, which is what GitHub's own digest
-                # covers - the exe and _internal/ extracted from it inherit
-                # that, since they come out of bytes already proven intact.
+                # and a mismatch must never become a staged install waiting
+                # for the next restart to apply it - see
+                # app_update.verify_exe_digest's own docstring for what this
+                # does and does not protect against. Checked against the
+                # whole zip, which is what GitHub's own digest covers - the
+                # exe and _internal/ extracted from it inherit that, since
+                # they come out of bytes already proven intact.
                 await asyncio.to_thread(
                     app_update.verify_exe_digest, archive_path, release.asset_digest
                 )
@@ -214,43 +215,72 @@ class AppUpdateMixin:
                 raise
             finally:
                 archive_path.unlink(missing_ok=True)
-
-            # Exe, then _internal/ - both must land or neither does. If the
-            # second swap fails after the first already succeeded (a crash,
-            # a full disk - the swaps themselves already retry a mere lock),
-            # roll the exe back too rather than persist a new exe paired
-            # with an old _internal/, which the coro's own docstring already
-            # explains cannot run.
-            exe_backup = await asyncio.to_thread(
-                app_update.replace_running_exe, exe_stage, exe_path
-            )
-            try:
-                await asyncio.to_thread(
-                    app_update.replace_running_internal, internal_stage, internal_path
-                )
-            except Exception:
-                try:
-                    os.replace(exe_backup, exe_path)
-                except OSError:
-                    logger.exception(
-                        "could not roll the exe back after a failed _internal/ swap - "
-                        "install may now be inconsistent"
-                    )
-                raise
         except Exception as exc:
             return {"ok": False, "error": describe_exception(exc), "version": None}
 
-        # The install on disk just changed out from under integrity.py's own
-        # baseline (bridgebox.exe and _internal/**/* are both WATCHED_GLOBS)
-        # - without this, the very next launch would show "files were
-        # modified" over a change this process just made itself. Same two
-        # lines the zapret update flow already runs after applying its own
-        # update.
-        await asyncio.to_thread(integrity.write_manifest, self._project_root)
-        self._integrity = integrity.IntegrityReport(verified=True)
-
-        logger.info("BridgeBox self-updated to %s - awaiting restart", release.version)
+        # Deliberately no integrity.write_manifest here: the files on disk
+        # have not changed yet, only staged copies exist. Recording a
+        # baseline now would describe files that are about to be replaced -
+        # main() does this instead, on the next launch, only once
+        # cleanup_stale_files confirms a swap actually happened.
+        logger.info("BridgeBox update to %s staged - awaiting restart to apply", release.version)
         return {"ok": True, "error": None, "version": release.version}
+
+    def restart_after_app_update(self) -> dict:
+        """"Перезапустить сейчас" for a self-update - writes and launches the
+        detached relaunch script that performs the actual swap once this
+        process is gone (see app_update.build_relaunch_script and its
+        module's own docstring for why), then shuts this process down the
+        same way restart_app() does.
+
+        Refuses if _apply_app_update_coro never staged anything (or a prior
+        restart already consumed the stage) - nothing to apply and nothing
+        this process should exit for."""
+        exe_path = app_update.running_exe_path()
+        internal_path = app_update.running_internal_dir()
+        if exe_path is None or internal_path is None:
+            return {
+                "ok": False,
+                "error": "Самообновление доступно только в собранной версии BridgeBox.",
+            }
+        exe_stage = app_update.stage_path_for(exe_path)
+        internal_stage = app_update.stage_path_for(internal_path)
+        if not exe_stage.exists() or not internal_stage.is_dir():
+            return {
+                "ok": False,
+                "error": "Нет подготовленного обновления для установки - "
+                "сначала нажмите «Обновить BridgeBox».",
+            }
+        try:
+            script = app_update.build_relaunch_script(
+                pid=os.getpid(),
+                exe_path=exe_path,
+                exe_stage=exe_stage,
+                internal_path=internal_path,
+                internal_stage=internal_stage,
+            )
+            script_path = self._temp_root() / "bridgebox_apply_update.bat"
+            script_path.parent.mkdir(parents=True, exist_ok=True)
+            script_path.write_text(script, encoding="utf-8")
+            subprocess.Popen(
+                ["cmd", "/c", str(script_path)],
+                cwd=str(self._project_root),
+                creationflags=getattr(subprocess, "DETACHED_PROCESS", 0)
+                | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
+            )
+            logger.info("relaunch helper started (%s) - stopping to let it apply the update", script_path)
+        except OSError as exc:
+            logger.exception("could not start the relaunch helper")
+            return {"ok": False, "error": describe_exception(exc)}
+
+        # Same shutdown shape as desktop.Api.restart_app: stop the bridge
+        # gracefully, then close the window - the helper is already waiting
+        # on this process's PID and will not touch anything until it is
+        # actually gone.
+        self._runtime.stop()
+        if self._window is not None:
+            self._window.destroy()
+        return {"ok": True, "error": None}
 
     def start_app_apply_update(self) -> None:
         """User-triggered ("Обновить сейчас") - fire the download+swap in the

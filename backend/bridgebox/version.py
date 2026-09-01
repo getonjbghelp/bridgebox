@@ -98,21 +98,25 @@ def release_label(version_string: str | None = None) -> str:
 
 
 def display_version(version_string: str | None = None) -> str:
-    """What the user is shown: "0.1.1".
+    """What the user is shown: "0.1.1", or "0.1.8.1" for a patch release on
+    top of one.
 
     pyproject has to hold a PEP 440 version ("0.1.1b1") because packaging
     tools read it, but the pre-release suffix is noise to a player - the
-    beta-ness is already said by the β badge (release_label). Every numeric
-    component before that suffix is kept: dropping the patch number used to
-    be safe when it was always 0, but a bump like 0.1.0b1 -> 0.1.1b1 has to
-    actually show up somewhere, and this is the only string the UI reads
-    for that. _VERSION_PART.findall picks up the pre-release's own digit too
-    ("0.1.1b1" -> ["0","1","1","1"]) - parts[:3] is what keeps that 4th one
-    out."""
-    parts = _VERSION_PART.findall(version_string or app_version())
-    if not parts:
-        return ""
-    return ".".join(parts[:3])
+    beta-ness is already said by the β badge (release_label). The suffix is
+    stripped by matching it explicitly (release_label's own _PRERELEASE_RE,
+    anchored to the end of the string) BEFORE pulling out numeric parts,
+    rather than by keeping a fixed number of parts and hoping the count
+    lines up: _VERSION_PART.findall sees "0.1.1b1" as four numbers
+    (0, 1, 1, 1), and a fixed parts[:3] cut used to assume the 4th was
+    always that suffix's own digit - which stopped being true the day a
+    real 4th version component (a patch release like "0.1.8.1") existed to
+    tell apart from it. Every numeric component that survives the strip is
+    real and kept, however many there are."""
+    version_string = version_string or app_version()
+    without_prerelease = _PRERELEASE_RE.sub("", version_string)
+    parts = _VERSION_PART.findall(without_prerelease)
+    return ".".join(parts)
 
 
 def build_channel() -> str:

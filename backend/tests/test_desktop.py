@@ -1,5 +1,5 @@
 import json
-import shutil
+import os
 import sys
 import threading
 import time
@@ -193,6 +193,67 @@ def test_main_proceeds_when_admin(monkeypatch):
     # window-close would.
     for handler in fake_window.events.closing.handlers:
         handler()
+
+
+# ---- reconcile_self_update (the main()-startup half of a self-update) -----
+
+
+def test_reconcile_self_update_is_a_noop_in_dev_mode(tmp_path: Path, monkeypatch):
+    manifest_calls = []
+    monkeypatch.setattr(desktop.integrity, "write_manifest", lambda root: manifest_calls.append(root))
+
+    desktop.reconcile_self_update(None, tmp_path)  # must not raise
+
+    assert manifest_calls == []
+
+
+def test_reconcile_self_update_rebaselines_only_after_a_completed_swap(
+    tmp_path: Path, monkeypatch
+):
+    """A `.old` backup existing is the only signal that bridgebox.exe/
+    _internal/ actually changed under this process - a leftover `.new` stage
+    (an update that downloaded but was never applied) must not trigger a
+    re-baseline over files that never changed."""
+    exe_path = tmp_path / "app" / "BridgeBox.exe"
+    exe_path.parent.mkdir()
+    exe_path.write_bytes(b"current")
+    (exe_path.parent / "BridgeBox.exe.new").write_bytes(b"never-applied")
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    manifest_calls = []
+    monkeypatch.setattr(desktop.integrity, "write_manifest", lambda root: manifest_calls.append(root))
+
+    desktop.reconcile_self_update(exe_path, project_root)
+
+    assert manifest_calls == [], "no .old backup existed - nothing actually swapped"
+
+
+def test_reconcile_self_update_rebaselines_after_a_completed_swap(tmp_path: Path, monkeypatch):
+    exe_path = tmp_path / "app" / "BridgeBox.exe"
+    exe_path.parent.mkdir()
+    exe_path.write_bytes(b"current")
+    (exe_path.parent / "BridgeBox.exe.old").write_bytes(b"left-over-from-the-swap")
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    manifest_calls = []
+    monkeypatch.setattr(desktop.integrity, "write_manifest", lambda root: manifest_calls.append(root))
+
+    desktop.reconcile_self_update(exe_path, project_root)
+
+    assert manifest_calls == [project_root]
+    assert not (exe_path.parent / "BridgeBox.exe.old").exists(), "cleaned up, not just detected"
+
+
+def test_reconcile_self_update_swallows_a_cleanup_failure(tmp_path: Path, monkeypatch):
+    """Best-effort: a failure here must never stop the app from starting."""
+    exe_path = tmp_path / "BridgeBox.exe"
+    exe_path.write_bytes(b"current")
+    monkeypatch.setattr(
+        desktop.app_update, "cleanup_stale_files",
+        lambda path: (_ for _ in ()).throw(OSError("disk error")),
+    )
+
+    desktop.reconcile_self_update(exe_path, tmp_path)  # must not raise
 
 
 # ---- Api ----------------------------------------------------------------
@@ -1552,13 +1613,13 @@ class _FakeAppRelease:
         self.asset_digest = asset_digest
 
 
-def test_apply_app_update_coro_downloads_and_swaps_both_the_exe_and_internal_dir(
+def test_apply_app_update_coro_downloads_and_stages_both_the_exe_and_internal_dir(
     tmp_path: Path, monkeypatch
 ):
     """Releases ship the portable .zip - onedir means self-update has to
-    unpack and swap BOTH bridgebox.exe and its _internal/ folder, not the
-    exe alone (see _apply_app_update_coro's own docstring on why a
-    mismatched pairing cannot run)."""
+    unpack BOTH bridgebox.exe and its _internal/ folder, not the exe alone.
+    Only staged at `.new` paths, though - see app_update.py's own module
+    docstring on why the actual swap cannot happen here, in this process."""
     exe_path = tmp_path / "app" / "BridgeBox.exe"
     internal_path = tmp_path / "app" / "_internal"
     exe_path.parent.mkdir()
@@ -1581,25 +1642,8 @@ def test_apply_app_update_coro_downloads_and_swaps_both_the_exe_and_internal_dir
         _fake_portable_release_zip(Path(dest), exe_bytes=b"new-exe", internal_bytes=b"new-internal")
         return dest
 
-    swapped = {}
-
-    def fake_replace_exe(new_path, current_path):
-        swapped["exe"] = (Path(new_path), current_path)
-        current_path.write_bytes(Path(new_path).read_bytes())
-        return current_path.with_name(current_path.name + ".old")
-
-    def fake_replace_internal(new_dir, current_dir):
-        swapped["internal"] = (Path(new_dir), current_dir)
-        shutil.rmtree(current_dir)
-        Path(new_dir).rename(current_dir)
-        return current_dir.with_name(current_dir.name + ".old")
-
-    manifest_calls = []
     monkeypatch.setattr(desktop.app_update, "fetch_latest_release", fake_fetch)
     monkeypatch.setattr(desktop.app_update, "download_exe", fake_download_exe)
-    monkeypatch.setattr(desktop.app_update, "replace_running_exe", fake_replace_exe)
-    monkeypatch.setattr(desktop.app_update, "replace_running_internal", fake_replace_internal)
-    monkeypatch.setattr(desktop_app_update.integrity, "write_manifest", lambda root: manifest_calls.append(root))
     api = _make_api(tmp_path)
 
     import asyncio as _asyncio
@@ -1607,23 +1651,27 @@ def test_apply_app_update_coro_downloads_and_swaps_both_the_exe_and_internal_dir
     result = _asyncio.run(api._apply_app_update_coro())
 
     assert result == {"ok": True, "error": None, "version": "0.2.0"}
-    assert exe_path.read_bytes() == b"new-exe"
-    assert (internal_path / "base_library.zip").read_bytes() == b"new-internal"
-    # Both landed beside the running install, not in temp - replace_*
+    exe_stage = exe_path.with_name(exe_path.name + ".new")
+    internal_stage = internal_path.with_name(internal_path.name + ".new")
+    assert exe_stage.read_bytes() == b"new-exe"
+    assert (internal_stage / "base_library.zip").read_bytes() == b"new-internal"
+    # Staged beside the running install, not in temp - the eventual swap
     # renames paths past each other, which only works within one volume.
-    assert swapped["exe"][0].parent == exe_path.parent
-    assert swapped["internal"][0].parent == internal_path.parent
+    assert exe_stage.parent == exe_path.parent
+    assert internal_stage.parent == internal_path.parent
     # The zip itself was scratch - it must not be left behind.
     assert downloaded["dest"].parent == api._temp_root()
     assert not downloaded["dest"].exists()
-    # The install on disk just changed out from under integrity.py's own
-    # baseline - without a fresh manifest the very next launch would show
-    # "files were modified" over a change this process just made itself.
-    assert manifest_calls == [tmp_path]
-    assert api._integrity.verified is True
+    # Nothing about the LIVE install changed - staging never touches it.
+    assert exe_path.read_bytes() == b"old-exe"
+    assert (internal_path / "base_library.zip").read_bytes() == b"old-internal"
+    # No integrity re-baseline either: the files on disk have not changed,
+    # only staged copies exist (main() re-baselines on the NEXT launch,
+    # once cleanup_stale_files confirms a swap actually happened).
+    assert api._integrity is None
 
 
-def test_apply_app_update_coro_refuses_a_digest_mismatch_and_does_not_swap(
+def test_apply_app_update_coro_refuses_a_digest_mismatch_and_does_not_stage(
     tmp_path: Path, monkeypatch
 ):
     exe_path = tmp_path / "BridgeBox.exe"
@@ -1641,16 +1689,8 @@ def test_apply_app_update_coro_refuses_a_digest_mismatch_and_does_not_swap(
         _fake_portable_release_zip(Path(dest), exe_bytes=b"new-exe", internal_bytes=b"new-internal")
         return dest
 
-    replace_calls = []
-
-    def fake_replace(*args):
-        replace_calls.append(args)
-        raise AssertionError("must not swap in an install that failed its checksum")
-
     monkeypatch.setattr(desktop.app_update, "fetch_latest_release", fake_fetch)
     monkeypatch.setattr(desktop.app_update, "download_exe", fake_download_exe)
-    monkeypatch.setattr(desktop.app_update, "replace_running_exe", fake_replace)
-    monkeypatch.setattr(desktop.app_update, "replace_running_internal", fake_replace)
     api = _make_api(tmp_path)
 
     import asyncio as _asyncio
@@ -1658,7 +1698,6 @@ def test_apply_app_update_coro_refuses_a_digest_mismatch_and_does_not_swap(
     result = _asyncio.run(api._apply_app_update_coro())
 
     assert result["ok"] is False
-    assert replace_calls == []
     assert exe_path.read_bytes() == b"old-exe"
     assert (internal_path / "base_library.zip").read_bytes() == b"old-internal"
     exe_stage = tmp_path / "BridgeBox.exe.new"
@@ -1712,19 +1751,8 @@ def test_apply_app_update_coro_never_touches_config(tmp_path: Path, monkeypatch)
         _fake_portable_release_zip(Path(dest), exe_bytes=b"new-exe", internal_bytes=b"new-internal")
         return dest
 
-    def fake_replace_exe(new_path, current_path):
-        current_path.write_bytes(Path(new_path).read_bytes())
-        return current_path.with_name(current_path.name + ".old")
-
-    def fake_replace_internal(new_dir, current_dir):
-        shutil.rmtree(current_dir)
-        Path(new_dir).rename(current_dir)
-        return current_dir.with_name(current_dir.name + ".old")
-
     monkeypatch.setattr(desktop.app_update, "fetch_latest_release", fake_fetch)
     monkeypatch.setattr(desktop.app_update, "download_exe", fake_download_exe)
-    monkeypatch.setattr(desktop.app_update, "replace_running_exe", fake_replace_exe)
-    monkeypatch.setattr(desktop.app_update, "replace_running_internal", fake_replace_internal)
     api = _make_api(tmp_path)
 
     import asyncio as _asyncio
@@ -3305,3 +3333,78 @@ def test_restart_app_passes_a_real_environment_outside_a_frozen_build(tmp_path: 
 
     assert captured["env"]["BRIDGEBOX_UNRELATED"] == "keep-me"
     assert len(captured["env"]) > 1
+
+
+# ---- restart_after_app_update (the relaunch-helper flow) -------------------
+
+
+def test_restart_after_app_update_refuses_when_not_frozen(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(desktop_app_update.app_update, "running_exe_path", lambda: None)
+    spawned = []
+    monkeypatch.setattr(desktop_app_update.subprocess, "Popen", lambda *a, **kw: spawned.append(1))
+    api = _make_api(tmp_path)
+
+    result = api.restart_after_app_update()
+
+    assert result["ok"] is False
+    assert spawned == []
+
+
+def test_restart_after_app_update_refuses_when_nothing_is_staged(tmp_path: Path, monkeypatch):
+    """Calling this without a preceding, successful start_app_apply_update
+    (or calling it twice - the first restart already consumed the stage)
+    must not spawn a helper that would just fail to find anything to swap."""
+    exe_path = tmp_path / "BridgeBox.exe"
+    internal_path = tmp_path / "_internal"
+    exe_path.write_bytes(b"current")
+    internal_path.mkdir()
+    monkeypatch.setattr(desktop_app_update.app_update, "running_exe_path", lambda: exe_path)
+    monkeypatch.setattr(desktop_app_update.app_update, "running_internal_dir", lambda: internal_path)
+    spawned = []
+    monkeypatch.setattr(desktop_app_update.subprocess, "Popen", lambda *a, **kw: spawned.append(1))
+    api = _make_api(tmp_path)
+
+    result = api.restart_after_app_update()
+
+    assert result["ok"] is False
+    assert spawned == []
+
+
+def test_restart_after_app_update_writes_and_spawns_the_relaunch_helper(
+    tmp_path: Path, monkeypatch
+):
+    exe_path = tmp_path / "BridgeBox.exe"
+    internal_path = tmp_path / "_internal"
+    exe_path.write_bytes(b"current-exe")
+    internal_path.mkdir()
+    exe_stage = exe_path.with_name(exe_path.name + ".new")
+    internal_stage = internal_path.with_name(internal_path.name + ".new")
+    exe_stage.write_bytes(b"staged-exe")
+    internal_stage.mkdir()
+    monkeypatch.setattr(desktop_app_update.app_update, "running_exe_path", lambda: exe_path)
+    monkeypatch.setattr(desktop_app_update.app_update, "running_internal_dir", lambda: internal_path)
+
+    spawned = {}
+
+    def fake_popen(command, **kwargs):
+        spawned["command"] = command
+        spawned["kwargs"] = kwargs
+        return object()
+
+    monkeypatch.setattr(desktop_app_update.subprocess, "Popen", fake_popen)
+    runtime = FakeRuntime()
+    api = _make_api(tmp_path, runtime=runtime)
+
+    result = api.restart_after_app_update()
+
+    assert result == {"ok": True, "error": None}
+    assert runtime.stop_calls == 1
+    # cmd /c <script>, detached - same shape restart_app's own subprocess.Popen
+    # call uses for the relaunch it spawns.
+    assert spawned["command"][0:2] == ["cmd", "/c"]
+    script_path = Path(spawned["command"][2])
+    assert script_path.parent == api._temp_root()
+    script = script_path.read_text(encoding="utf-8")
+    assert f"Wait-Process -Id {os.getpid()}" in script
+    assert str(exe_path) in script
+    assert str(internal_path) in script

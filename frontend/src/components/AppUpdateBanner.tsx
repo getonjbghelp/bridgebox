@@ -166,7 +166,10 @@ export function AppUpdateBanner() {
   }
 
   function handleRestartNow() {
-    if (isNativeBridgeAvailable()) callBridge('restart_app').catch(() => {})
+    // Not restart_app: applying a self-update needs the dedicated relaunch
+    // helper (see Api.restart_after_app_update) since the swap cannot
+    // happen in this process - see app_update.py's own docstring for why.
+    if (isNativeBridgeAvailable()) callBridge('restart_after_app_update').catch(() => {})
   }
 
   function handleOpenReleasePage() {
