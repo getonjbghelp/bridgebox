@@ -1,3 +1,16 @@
+> [!CAUTION]
+> ### Проект закрыт
+> Почему проект оказался закрыт? Все просто: выяснилось, что Zapret (версии
+> Flowseal) способен решить проблему с блокировкой jackbox, если добавить домены
+> «jackboxgames.com» и «jackbox.tv» в list-general (или list-general-user),
+> включить Game Filter на TCP и UDP, и переключить IPSet Filter на Any.
+> В связи с этим, вся дальнейшая разработка BridgeBox была приостановлена, а
+> репозиторий отправлен в архив.
+>
+> Спасибо за внимание!
+
+---
+
 <div align="center">
 
 [![THIS IS A RUSSIAN README. CHECK ENGLISH VERSION HERE](https://img.shields.io/badge/THIS%20IS%20A%20RUSSIAN%20README-CHECK%20ENGLISH%20VERSION%20HERE-1d4ed8?style=for-the-badge)](README.en.md)

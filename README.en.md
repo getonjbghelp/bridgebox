@@ -1,3 +1,16 @@
+> [!CAUTION]
+> ### Project closed
+> Why did the project get closed? It's simple: it turned out that Zapret (Flowseal's
+> build) can solve the Jackbox blocking problem on its own if you add the domains
+> "jackboxgames.com" and "jackbox.tv" to list-general (or list-general-user), turn on
+> the Game Filter for TCP and UDP, and switch the IPSet Filter to Any. Because of
+> that, all further development of BridgeBox has been paused, and the repository has
+> been archived.
+>
+> Thanks for reading!
+
+---
+
 <div align="center">
 
 [![THIS IS AN ENGLISH README. CHECK RUSSIAN VERSION HERE](https://img.shields.io/badge/THIS%20IS%20AN%20ENGLISH%20README-CHECK%20RUSSIAN%20VERSION%20HERE-1d4ed8?style=for-the-badge)](README.md)
