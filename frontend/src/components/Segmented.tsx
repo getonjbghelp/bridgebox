@@ -1,8 +1,15 @@
+import type { ReactNode } from 'react'
 import './Segmented.css'
 
 export interface SegmentedOption<T extends string> {
   value: T
-  label: string
+  // A flag emoji for a language option needs ReactNode, not string - every
+  // other caller passes plain text, which is still a valid ReactNode.
+  label: ReactNode
+  // Only needed when `label` isn't itself readable text (a flag emoji) - a
+  // screen reader's own name for a flag glyph isn't guaranteed, so the
+  // button needs an explicit one rather than relying on it.
+  ariaLabel?: string
 }
 
 interface SegmentedProps<T extends string> {
@@ -36,6 +43,7 @@ export function Segmented<T extends string>({
           type="button"
           className="bb-segmented__item"
           aria-pressed={value === option.value}
+          aria-label={option.ariaLabel}
           disabled={disabled}
           onClick={() => value !== option.value && onChange(option.value)}
         >

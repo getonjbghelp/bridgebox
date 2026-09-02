@@ -215,6 +215,10 @@ class Api(
         # from _app_update_future because a check and an apply can be in
         # flight independently and the frontend needs to tell them apart.
         self._app_apply_future = None
+        # Phase/byte progress for the apply above - same shape as zapret's own
+        # _update_state (api/zapret.py), read by app_apply_progress() while
+        # the future is still running, not just after it finishes.
+        self._app_apply_state: dict = {"phase": "idle", "received": 0, "total": 0}
         # Set by main() once the window exists - the folder picker needs it.
         # Stays None in dev/test, where every method must still answer with
         # the standard dict rather than raise.

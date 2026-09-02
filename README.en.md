@@ -268,7 +268,7 @@ Logs are also written to `logs/bridgebox.log`, rotating at 20 MB.
 |---|---|
 | **Start with Windows** | Creates a Task Scheduler task with the highest privilege level and a raised priority (not a registry Run key - without administrator rights the bypass couldn't work anyway, and the priority means BridgeBox doesn't wait in line behind other startup programs). Right next to it, **"Start minimized to tray"** keeps the window from appearing at all on login. |
 | **Turn on the bridge automatically** | The bridge comes up by itself when the program opens, no need to touch the toggle. |
-| **Minimize to tray on close** | The close button hides the window instead of killing the bypass mid-game. Full exit is through the tray icon's own menu. The tray icon is live: its tooltip and its "Stop the bridge" item always reflect the bridge's actual state. |
+| **Minimize to tray on close** | On by default. The close button hides the window instead of killing the bypass mid-game. Full exit is through the tray icon's own menu. The tray icon is live: its tooltip and its "Stop the bridge" item always reflect the bridge's actual state. |
 
 ### System
 
@@ -326,7 +326,7 @@ until it's installed.
 | Setting | What it does |
 |---|---|
 | **Installed version** | BridgeBox's own version (not Zapret's). |
-| **Check on startup** | **On** by default - unlike Zapret's check, this is the same channel critical security warnings arrive through. |
+| **Check on startup** | Off by default, same as Zapret's - a fresh install shouldn't phone GitHub on its own. Worth turning on: this is the same channel critical security warnings arrive through. |
 | **Check for updates** | A one-off request to GitHub. |
 | **Update BridgeBox** | Downloads, verifies the checksum, and swaps `bridgebox.exe` and `_internal/` in. On success it offers to restart - the new version only takes effect after that. Unavailable when running from source - update with `git pull` instead. |
 

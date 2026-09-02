@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence } from 'framer-motion'
 import { Button } from './Button'
 import { Modal } from './Modal'
-import { DiagBadge, type DiagState } from './DiagBadge'
+import { type DiagState } from './DiagBadge'
+import { ProgressBar } from './ProgressBar'
+import type { AppApplyProgress } from '../screens/settings/types'
 import { useStrings, t } from '../lib/strings'
 import { renderChangelogBody } from '../lib/richText'
 import { pickReleaseNotes } from '../lib/releaseNotes'
@@ -31,14 +33,6 @@ interface AppUpdateCheck {
   critical: boolean
   updateAvailable: boolean
   dismissedVersion: string
-}
-
-interface AppApplyProgress {
-  started: boolean
-  done: boolean
-  ok: boolean | null
-  error: string | null
-  version: string | null
 }
 
 const POLL_MS = 1500
@@ -71,6 +65,14 @@ export function AppUpdateBanner() {
   // release page by hand.
   const [applyState, setApplyState] = useState<DiagState>('idle')
   const [applyError, setApplyError] = useState<string | null>(null)
+  // phase/received/total for the progress bar - separate from applyState
+  // (which only tracks idle/running/done/error) so a re-render doesn't need
+  // to smuggle progress through DiagState's four values.
+  const [applyProgress, setApplyProgress] = useState<{
+    phase: AppApplyProgress['phase']
+    received: number
+    total: number
+  }>({ phase: 'idle', received: 0, total: 0 })
   const applyPollRef = useRef<number | undefined>(undefined)
 
   useEffect(() => () => stopApplyPolling(), [])
@@ -143,11 +145,17 @@ export function AppUpdateBanner() {
     if (!isNativeBridgeAvailable()) return
     setApplyState('running')
     setApplyError(null)
+    setApplyProgress({ phase: 'download', received: 0, total: 0 })
     await callBridge('start_app_apply_update').catch(() => {})
     stopApplyPolling()
     applyPollRef.current = window.setInterval(async () => {
       try {
         const progress = await callBridge<AppApplyProgress>('app_apply_progress')
+        setApplyProgress({
+          phase: progress.phase,
+          received: progress.received,
+          total: progress.total,
+        })
         if (!progress.done) return
         stopApplyPolling()
         if (progress.ok) {
@@ -185,7 +193,25 @@ export function AppUpdateBanner() {
   // here cannot drift between the two.
   function renderApplyActions(danger: boolean) {
     if (applyState === 'running') {
-      return <DiagBadge state="running" />
+      const percent =
+        applyProgress.phase === 'download' && applyProgress.total > 0
+          ? (applyProgress.received / applyProgress.total) * 100
+          : null
+      const phaseLabel =
+        applyProgress.phase === 'verify'
+          ? strings.appUpdate.phaseVerify
+          : applyProgress.phase === 'extract'
+            ? strings.appUpdate.phaseExtract
+            : strings.appUpdate.phaseDownload
+      return (
+        <div className="bb-update-progress">
+          <span className="text-caption">
+            {phaseLabel}
+            {percent !== null && <span className="text-mono"> {Math.round(percent)}%</span>}
+          </span>
+          <ProgressBar percent={percent} />
+        </div>
+      )
     }
     if (applyState === 'done') {
       return (

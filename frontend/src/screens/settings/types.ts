@@ -145,6 +145,9 @@ export interface AppApplyProgress {
   ok: boolean | null
   error: string | null
   version: string | null
+  phase: 'idle' | 'download' | 'verify' | 'extract' | 'done'
+  received: number
+  total: number
 }
 
 export interface ConfigResponse {
@@ -235,6 +238,11 @@ export interface ConfirmRequest {
   body: string
   confirmLabel: string
   danger?: boolean
+  // Factory reset is destructive and irreversible - unlike every other
+  // confirmation here, it must not be silence-able, so it carries no
+  // "don't ask again" toggle and confirmThenRun never consults a stored
+  // skip for it either.
+  hideSkip?: boolean
   action: () => void
 }
 

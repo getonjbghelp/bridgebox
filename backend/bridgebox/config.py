@@ -213,14 +213,13 @@ class UiConfig(BaseModel):
     # Turn the bridge on as soon as the app opens, so a player who leaves
     # autostart on never has to press anything.
     start_bridge_on_launch: bool = False
-    # Closing the window hides to the tray instead of quitting. On by default:
-    # the bridge is only useful while it runs, and a window closed by reflex
-    # used to take the whole bypass down mid-game.
-    # OFF by default. Closing a window is the one gesture every user already
-    # knows the meaning of, and quietly redefining it to "hide" is how an app
-    # ends up still running when somebody believed they had quit it. Anyone
-    # who wants the bypass to survive a stray click can turn it on.
-    minimize_to_tray: bool = False
+    # Closing the window hides to the tray instead of quitting. On by
+    # default, per product decision: the bridge is only useful while it
+    # runs, and a window closed by reflex (alt-F4, a stray click) used to
+    # take the whole bypass down mid-game. The tray icon's own "Выход" stays
+    # the one unambiguous way to actually quit, so the app is never running
+    # invisibly without a way back to that decision.
+    minimize_to_tray: bool = True
     # Dismissing the "files were modified" banner for good. Its own flag rather
     # than a generic "hide warnings": this one is meant to be dismissable by
     # somebody who edits their own strategies on purpose and knows exactly why

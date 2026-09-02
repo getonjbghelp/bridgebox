@@ -62,6 +62,17 @@
   margin-bottom: var(--space-3);
 }
 
+/* Replaces the bare spinner while applyState === 'running' - a fixed width
+   rather than flex:1 so it reads the same size in both places this renders
+   (the banner's tight actions row and the modal's own, which is otherwise
+   empty while running). */
+.bb-update-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 200px;
+}
+
 .bb-update-modal__error {
   font-size: 13px;
   color: var(--color-danger);

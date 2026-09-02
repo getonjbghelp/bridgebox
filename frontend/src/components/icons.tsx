@@ -1,6 +1,8 @@
 // Minimal hand-rolled icon set - a handful of glyphs doesn't justify an
 // icon-library dependency (YAGNI). Every icon: 20x20 viewBox, currentColor.
 
+import { useId } from 'react'
+
 type IconProps = { size?: number }
 
 export function IconHome({ size = 20 }: IconProps) {
@@ -204,6 +206,95 @@ export function IconRadar({ size = 20 }: IconProps) {
       />
       <circle cx="10" cy="10" r="1.2" fill="currentColor" />
       <circle cx="13.1" cy="13.4" r="1.1" fill="currentColor" opacity="0.75" />
+    </svg>
+  )
+}
+
+// ---- language flags -----------------------------------------------------
+// Not emoji: Windows/Chromium routinely renders flag emoji (regional
+// indicator pairs) as a bare two-letter code in a box instead of an actual
+// flag - confirmed live on this app's own target platform - so these are
+// drawn the same way every other icon here is, plain shapes on a 20x14 box.
+// Colours are muted versions of the real flags (this app's own house rule is
+// one accent colour doing one job per screen - two saturated national flags
+// sitting next to the real accent color would compete with it), and every
+// shape clips to a rounded rect via a per-instance clip-path id (useId, not
+// a literal string - two flags render on screen at once, a shared id would
+// make the second <clipPath> a no-op reference to the first). A translucent
+// white ring sits on top of every flag: the selected Segmented option's own
+// background IS the accent blue, and RU's muted middle stripe is close
+// enough to it that the flag read as a plain accent bar with a red stripe
+// until this was added.
+
+function useFlagClipId(): string {
+  return `flag-clip-${useId()}`
+}
+
+export function IconFlagRu({ size = 20 }: IconProps) {
+  const height = size * 0.7
+  const clipId = useFlagClipId()
+  return (
+    <svg width={size} height={height} viewBox="0 0 20 14" aria-hidden="true">
+      <defs>
+        <clipPath id={clipId}>
+          <rect width="20" height="14" rx="3" />
+        </clipPath>
+      </defs>
+      <g clipPath={`url(#${clipId})`}>
+        <rect width="20" height="14" fill="#e9edf2" />
+        <rect y="4.67" width="20" height="4.66" fill="#5b7ba8" />
+        <rect y="9.33" width="20" height="4.67" fill="#b6635a" />
+      </g>
+      <rect x="0.5" y="0.5" width="19" height="13" rx="2.5" fill="none" stroke="rgba(255,255,255,0.4)" />
+    </svg>
+  )
+}
+
+/** Simplified Union Jack - symmetric diagonals rather than the real flag's
+ *  offset ones, which is illegible at this size and is how every small flag
+ *  icon set draws it. */
+export function IconFlagGb({ size = 20 }: IconProps) {
+  const height = size * 0.7
+  const clipId = useFlagClipId()
+  return (
+    <svg width={size} height={height} viewBox="0 0 20 14" aria-hidden="true">
+      <defs>
+        <clipPath id={clipId}>
+          <rect width="20" height="14" rx="3" />
+        </clipPath>
+      </defs>
+      <g clipPath={`url(#${clipId})`}>
+        <rect width="20" height="14" fill="#3d5680" />
+        <path d="M0 0 20 14M20 0 0 14" stroke="#e9edf2" strokeWidth="3" />
+        <path d="M0 0 20 14M20 0 0 14" stroke="#b6635a" strokeWidth="1.2" />
+        <path d="M10 0V14M0 7H20" stroke="#e9edf2" strokeWidth="5" />
+        <path d="M10 0V14M0 7H20" stroke="#b6635a" strokeWidth="2.2" />
+      </g>
+      <rect x="0.5" y="0.5" width="19" height="13" rx="2.5" fill="none" stroke="rgba(255,255,255,0.4)" />
+    </svg>
+  )
+}
+
+/** A reachability ping - three ascending bars, the same glyph every OS uses
+ *  for signal strength. Small and unambiguous at the 13px the connection-test
+ *  rows on Запуск use it at, unlike IconRadar's multi-ring sweep (built for a
+ *  56px wizard hero, not a 13px status line). */
+export function IconSignal({ size = 20 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <path d="M4 15v-3M9.5 15V8M15 15V3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+/** A room, for the create/verify/close trio in the connection test - one
+ *  glyph for all three since they act on the same room; the row's own colour
+ *  (ok/error) already says which step and how it went. */
+export function IconDoor({ size = 20 }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <rect x="5" y="3" width="9" height="14" rx="1" stroke="currentColor" strokeWidth="1.5" />
+      <circle cx="11.4" cy="10" r="0.9" fill="currentColor" />
     </svg>
   )
 }

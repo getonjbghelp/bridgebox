@@ -184,6 +184,12 @@ class AppUpdateMixin:
             # unpacked straight to their stage paths, next to what they will
             # eventually replace.
             archive_path = self._temp_root() / "BridgeBox-release.zip"
+
+            def progress(received: int, total: int) -> None:
+                self._app_apply_state["received"] = received
+                if total:
+                    self._app_apply_state["total"] = total
+
             async with aiohttp.ClientSession() as session:
                 release = await app_update.fetch_latest_release(session)
                 if not release.asset_url or not release.asset_is_archive:
@@ -191,7 +197,9 @@ class AppUpdateMixin:
                         f"release {release.version or '?'} ships no portable .zip to "
                         "self-update from"
                     )
-                await app_update.download_exe(session, release.asset_url, archive_path)
+                await app_update.download_exe(
+                    session, release.asset_url, archive_path, on_progress=progress
+                )
             try:
                 # Runs before extraction, not after: the downloaded bytes get
                 # one chance to prove they are what GitHub actually shipped,
@@ -202,9 +210,11 @@ class AppUpdateMixin:
                 # whole zip, which is what GitHub's own digest covers - the
                 # exe and _internal/ extracted from it inherit that, since
                 # they come out of bytes already proven intact.
+                self._app_apply_state["phase"] = "verify"
                 await asyncio.to_thread(
                     app_update.verify_exe_digest, archive_path, release.asset_digest
                 )
+                self._app_apply_state["phase"] = "extract"
                 await asyncio.to_thread(
                     app_update.extract_release_from_archive,
                     archive_path, exe_stage, internal_stage,
@@ -224,6 +234,7 @@ class AppUpdateMixin:
         # main() does this instead, on the next launch, only once
         # cleanup_stale_files confirms a swap actually happened.
         logger.info("BridgeBox update to %s staged - awaiting restart to apply", release.version)
+        self._app_apply_state["phase"] = "done"
         return {"ok": True, "error": None, "version": release.version}
 
     def restart_after_app_update(self) -> dict:
@@ -289,17 +300,23 @@ class AppUpdateMixin:
         running = self._app_apply_future
         if running is not None and not running.done():
             return
+        self._app_apply_state = {"phase": "download", "received": 0, "total": 0}
         self._app_apply_future = self._runtime.submit(self._apply_app_update_coro)
 
     def app_apply_progress(self) -> dict:
-        """Polled by the frontend after start_app_apply_update()."""
+        """Polled by the frontend after start_app_apply_update() - phase/
+        received/total come from _app_apply_state (see its own comment in
+        desktop.py) so a still-running apply reports real progress instead
+        of a bare "started" flag, the same shape zapret_update_progress
+        already gives its own update flow."""
         future = self._app_apply_future
+        state = dict(self._app_apply_state)
         if future is None:
-            return {"started": False, "done": False, "ok": None, "error": None, "version": None}
+            return {"started": False, "done": False, "ok": None, "error": None, "version": None, **state}
         if not future.done():
-            return {"started": True, "done": False, "ok": None, "error": None, "version": None}
+            return {"started": True, "done": False, "ok": None, "error": None, "version": None, **state}
         try:
             result = future.result()
         except Exception as exc:
             result = {"ok": False, "error": describe_exception(exc), "version": None}
-        return {"started": True, "done": True, **result}
+        return {"started": True, "done": True, **state, **result}

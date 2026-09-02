@@ -35,6 +35,12 @@ other_launch_backup.json
 # source (committing it would duplicate the entire repo inside itself).
 /githubpubliccode/
 
+# pnpm's local content-addressable package store (see frontend's .npmrc
+# store-dir). A cache, not source - was being tracked by mistake, which is
+# also why sync_and_publish already excludes it from the public repo (see
+# EXCLUDE_DIRS in tools/sync_and_publish_internal.py).
+/.pnpm-store/
+
 # tgbot - internal Telegram release-announcer bot (see tgbot/README.md).
 # Secrets and runtime state never get committed, even to the private repo.
 tgbot/.env

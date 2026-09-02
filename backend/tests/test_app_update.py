@@ -998,11 +998,19 @@ async def test_self_update_pipeline_end_to_end_against_a_real_http_server(
         assert release.asset_digest == digest
 
         downloaded = tmp_path / "downloaded.zip"
+        progress_calls: list[tuple[int, int]] = []
         await app_update.download_exe(
             session, release.asset_url, downloaded, allowed_hosts=local_only, require_https=False,
+            on_progress=lambda received, total: progress_calls.append((received, total)),
         )
 
     assert downloaded.read_bytes() == zip_bytes
+    # on_progress is what api/app_update.py's _apply_app_update_coro feeds
+    # into _app_apply_state for the UI's progress bar - a real server with a
+    # real Content-Length is what actually proves the byte counts, not a
+    # hand-mocked session that could report anything.
+    assert progress_calls, "on_progress must fire at least once for a real download"
+    assert progress_calls[-1] == (len(zip_bytes), len(zip_bytes))
 
     app_update.verify_exe_digest(downloaded, release.asset_digest)  # must not raise
 

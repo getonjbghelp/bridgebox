@@ -6,7 +6,9 @@ import { Button } from '../components/Button'
 import { Modal } from '../components/Modal'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { DiagBadge, type DiagState } from '../components/DiagBadge'
+import { IconFlagGb, IconFlagRu } from '../components/icons'
 import { Spinner } from '../components/Spinner'
+import { ProgressBar } from '../components/ProgressBar'
 import { Segmented } from '../components/Segmented'
 import { useMotionPrefs } from '../state/MotionPrefsContext'
 import { useSpringTransition, useStepTransition } from '../lib/motion'
@@ -158,6 +160,11 @@ export function SettingsScreen() {
   // above, which only asks "is there something newer".
   const [appApplyState, setAppApplyState] = useState<DiagState>('idle')
   const [appApplyError, setAppApplyError] = useState<string | null>(null)
+  const [appApplyProgress, setAppApplyProgress] = useState<{
+    phase: AppApplyProgress['phase']
+    received: number
+    total: number
+  }>({ phase: 'idle', received: 0, total: 0 })
   const appApplyPollRef = useRef<number | undefined>(undefined)
 
   const [hostlistOpen, setHostlistOpen] = useState(false)
@@ -498,7 +505,7 @@ export function SettingsScreen() {
   }
 
   function confirmThenRun(request: ConfirmRequest) {
-    if (isConfirmSkipped(request.id)) {
+    if (!request.hideSkip && isConfirmSkipped(request.id)) {
       request.action()
       return
     }
@@ -547,11 +554,17 @@ export function SettingsScreen() {
     if (!isNativeBridgeAvailable()) return
     setAppApplyState('running')
     setAppApplyError(null)
+    setAppApplyProgress({ phase: 'download', received: 0, total: 0 })
     await callBridge('start_app_apply_update').catch(() => {})
     stopAppApplyPolling()
     appApplyPollRef.current = window.setInterval(async () => {
       try {
         const progress = await callBridge<AppApplyProgress>('app_apply_progress')
+        setAppApplyProgress({
+          phase: progress.phase,
+          received: progress.received,
+          total: progress.total,
+        })
         if (!progress.done) return
         stopAppApplyPolling()
         if (progress.ok) {
@@ -723,8 +736,8 @@ export function SettingsScreen() {
               ariaLabel={strings.settings.languageLabel}
               options={[
                 { value: 'system', label: strings.settings.languageSystem },
-                { value: 'ru', label: 'RU' },
-                { value: 'en', label: 'EN' },
+                { value: 'ru', label: <IconFlagRu />, ariaLabel: 'Русский' },
+                { value: 'en', label: <IconFlagGb />, ariaLabel: 'English' },
               ]}
             />
           }
@@ -1022,21 +1035,41 @@ export function SettingsScreen() {
                 : strings.settings.appUpdateApplyHint
             }
             control={
-              <div className="bb-diag">
-                <Button
-                  variant="primary"
-                  onClick={runAppApplyUpdate}
-                  disabled={appApplyState === 'running'}
-                >
-                  {strings.settings.appUpdateApplyButton}
-                </Button>
-                <DiagBadge state={appApplyState} />
-                {appApplyState === 'error' && (
-                  <Button variant="ghost" onClick={openAppReleasePage}>
-                    {strings.settings.appUpdateOpenReleaseButton}
+              appApplyState === 'running' ? (
+                <div className="bb-update-progress">
+                  <span className="text-caption">
+                    {appApplyProgress.phase === 'verify'
+                      ? strings.appUpdate.phaseVerify
+                      : appApplyProgress.phase === 'extract'
+                        ? strings.appUpdate.phaseExtract
+                        : strings.appUpdate.phaseDownload}
+                    {appApplyProgress.phase === 'download' && appApplyProgress.total > 0 && (
+                      <span className="text-mono">
+                        {' '}
+                        {Math.round((appApplyProgress.received / appApplyProgress.total) * 100)}%
+                      </span>
+                    )}
+                  </span>
+                  <ProgressBar
+                    percent={
+                      appApplyProgress.phase === 'download' && appApplyProgress.total > 0
+                        ? (appApplyProgress.received / appApplyProgress.total) * 100
+                        : null
+                    }
+                  />
+                </div>
+              ) : (
+                <div className="bb-diag">
+                  <Button variant="primary" onClick={runAppApplyUpdate}>
+                    {strings.settings.appUpdateApplyButton}
                   </Button>
-                )}
-              </div>
+                  {appApplyState === 'error' && (
+                    <Button variant="ghost" onClick={openAppReleasePage}>
+                      {strings.settings.appUpdateOpenReleaseButton}
+                    </Button>
+                  )}
+                </div>
+              )
             }
           />
         )}
@@ -1168,6 +1201,7 @@ export function SettingsScreen() {
                   body: strings.settings.factoryResetConfirmBody,
                   confirmLabel: strings.settings.factoryResetButton,
                   danger: true,
+                  hideSkip: true,
                   action: factoryReset,
                 })
               }
@@ -1256,8 +1290,7 @@ export function SettingsScreen() {
             ) : updateProgress && !updateProgress.ok ? (
               <p className="text-body bb-diag__error">{updateProgress.error}</p>
             ) : (
-              <div className="bb-diag">
-                <Spinner size={18} />
+              <div className="bb-update-progress">
                 <span className="text-body">
                   {updateProgress?.phase === 'extract'
                     ? strings.settings.updatePhaseExtract
@@ -1271,6 +1304,13 @@ export function SettingsScreen() {
                     </span>
                   )}
                 </span>
+                <ProgressBar
+                  percent={
+                    updateProgress?.phase === 'download' && updateProgress.total > 0
+                      ? (updateProgress.received / updateProgress.total) * 100
+                      : null
+                  }
+                />
               </div>
             )}
           </Modal>
@@ -1284,6 +1324,7 @@ export function SettingsScreen() {
             body={confirmRequest.body}
             confirmLabel={confirmRequest.confirmLabel}
             danger={confirmRequest.danger}
+            hideSkip={confirmRequest.hideSkip}
             onCancel={() => setConfirmRequest(null)}
             onConfirm={(skipNextTime) => {
               if (skipNextTime) setConfirmSkipped(confirmRequest.id)

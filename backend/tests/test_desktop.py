@@ -633,8 +633,9 @@ async def test_api_test_connection_ping_failure_does_not_block_room_creation(
         result = await api._test_connection_coro()
 
         assert result["ok"] is True, result
-        assert any("пинг" in step and "ошибка" in step for step in result["steps"])
-        assert any("создана" in step for step in result["steps"])
+        assert any("пинг" in s["text"] and "ошибка" in s["text"] for s in result["steps"])
+        assert any(s["kind"] == "ping" and s["ok"] is False for s in result["steps"])
+        assert any("создана" in s["text"] for s in result["steps"])
     finally:
         await runner.cleanup()
 
@@ -728,10 +729,11 @@ async def test_api_test_connection_full_round_trip_against_a_real_local_server(
         result = await api._test_connection_coro()
 
         assert result["ok"] is True, result
-        assert any("пинг ecast.jackboxgames.com" in step for step in result["steps"])
-        assert any("пинг ecast-prod-use2.jackboxgames.com" in step for step in result["steps"])
-        assert any("создана" in step for step in result["steps"])
-        assert any("подтверждена" in step for step in result["steps"])
+        assert any("пинг ecast.jackboxgames.com" in s["text"] for s in result["steps"])
+        assert any("пинг ecast-prod-use2.jackboxgames.com" in s["text"] for s in result["steps"])
+        create_step = next(s for s in result["steps"] if "создана" in s["text"])
+        assert create_step["kind"] == "room_create" and create_step["ok"] is True
+        assert any("подтверждена" in s["text"] for s in result["steps"])
 
         # Verified against the live API: aiohttp's default "Python/x aiohttp/y"
         # User-Agent gets a 403 text/html page from the AWS load balancer,
@@ -754,7 +756,7 @@ async def test_api_test_connection_full_round_trip_against_a_real_local_server(
         # half existed, so every click left a real room behind on Jackbox's
         # servers. Every diagnostic run must clean up after itself.
         assert ("DELETE", "https://ecast.jackboxgames.com/api/v2/rooms/TEST") in seen_calls
-        assert any("закрыта" in step for step in result["steps"])
+        assert any("закрыта" in s["text"] for s in result["steps"])
     finally:
         await runner.cleanup()
 
@@ -816,7 +818,7 @@ async def test_test_connection_still_succeeds_when_the_room_cannot_be_closed(
 
         assert result["ok"] is True, result
         # The server's own words, not an invented explanation.
-        assert any("bad token" in step for step in result["steps"])
+        assert any("bad token" in s["text"] for s in result["steps"])
         # The token was found despite being nested inside the envelope, and it
         # travels in the query string. Measured against the real API, not
         # assumed: Authorization: Bearer <token> and a bare Authorization:
@@ -891,9 +893,9 @@ async def test_api_test_connection_full_round_trip_with_the_real_host_field_shap
         result = await api._test_connection_coro()
 
         assert result["ok"] is True, result
-        assert any("MNAK" in step for step in result["steps"]), result["steps"]
-        assert any("создана" in step for step in result["steps"]), result["steps"]
-        assert any("подтверждена" in step for step in result["steps"]), result["steps"]
+        assert any("MNAK" in s["text"] for s in result["steps"]), result["steps"]
+        assert any("создана" in s["text"] for s in result["steps"]), result["steps"]
+        assert any("подтверждена" in s["text"] for s in result["steps"]), result["steps"]
     finally:
         await runner.cleanup()
 
@@ -939,9 +941,9 @@ async def test_api_test_connection_succeeds_with_no_relay_field_present(
         result = await api._test_connection_coro()
 
         assert result["ok"] is True, result
-        create_step = next(s for s in result["steps"] if "создана" in s)
-        assert "relay" not in create_step  # no relay field found -> no relay note
-        assert any("подтверждена" in step for step in result["steps"]), result["steps"]
+        create_step = next(s for s in result["steps"] if "создана" in s["text"])
+        assert "relay" not in create_step["text"]  # no relay field found -> no relay note
+        assert any("подтверждена" in s["text"] for s in result["steps"]), result["steps"]
     finally:
         await runner.cleanup()
 
@@ -1651,6 +1653,9 @@ def test_apply_app_update_coro_downloads_and_stages_both_the_exe_and_internal_di
     result = _asyncio.run(api._apply_app_update_coro())
 
     assert result == {"ok": True, "error": None, "version": "0.2.0"}
+    # Phase tracking (app_apply_progress reads this) reaches "done" by the
+    # end - verify/extract advance it along the way, not just download.
+    assert api._app_apply_state["phase"] == "done"
     exe_stage = exe_path.with_name(exe_path.name + ".new")
     internal_stage = internal_path.with_name(internal_path.name + ".new")
     assert exe_stage.read_bytes() == b"new-exe"
@@ -1767,7 +1772,16 @@ def test_app_apply_progress_when_never_started(tmp_path: Path):
 
     result = api.app_apply_progress()
 
-    assert result == {"started": False, "done": False, "ok": None, "error": None, "version": None}
+    assert result == {
+        "started": False,
+        "done": False,
+        "ok": None,
+        "error": None,
+        "version": None,
+        "phase": "idle",
+        "received": 0,
+        "total": 0,
+    }
 
 
 def test_start_app_apply_update_then_app_apply_progress_reports_done(
@@ -1782,7 +1796,19 @@ def test_start_app_apply_update_then_app_apply_progress_reports_done(
     api.start_app_apply_update()
     result = api.app_apply_progress()
 
-    assert result == {"started": True, "done": True, "ok": True, "error": None, "version": "0.2.0"}
+    assert result == {
+        "started": True,
+        "done": True,
+        "ok": True,
+        "error": None,
+        "version": "0.2.0",
+        # The fake coroutine never touches _app_apply_state itself (it
+        # replaces the whole coroutine, not just a step inside it), so this
+        # is exactly what start_app_apply_update seeded before submitting.
+        "phase": "download",
+        "received": 0,
+        "total": 0,
+    }
 
 
 def test_a_second_start_app_apply_update_does_not_pile_onto_a_live_run(tmp_path: Path):

@@ -104,6 +104,44 @@ textarea {
   color: var(--color-text-primary);
 }
 
+/* Thin, theme-matched scrollbar - the UA default ignores --color-* entirely,
+   so a light-grey bar sat down the side of every scrollable panel in dark
+   mode. scrollbar-color covers the standard-track engines; the ::-webkit-*
+   rules are what actually render here (pywebview's Windows backend is
+   WebView2, i.e. Chromium) and are the only way to get the floating,
+   inset-from-the-edge look rather than a flush grey rail. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-strong) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* The transparent border + padding-box clip insets the thumb from the track
+   edges - a solid-fill thumb reads as a thick grey slab, this reads as a
+   pill floating a couple pixels off the edge. */
+*::-webkit-scrollbar-thumb {
+  background-color: var(--color-border-strong);
+  border-radius: var(--radius-full);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-text-tertiary);
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 /* Links inside authored prose (changelog entries, the licence text on the
    Info screen) - see lib/richText.tsx's renderLinks. Everything else in this
    app is buttons and toggles, not <a> tags, so one rule covers every case

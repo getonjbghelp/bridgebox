@@ -7,7 +7,7 @@ import { Button } from '../components/Button'
 import { Modal } from '../components/Modal'
 import { ConnectGuide } from '../components/ConnectGuide'
 import { DiagBadge, type DiagState } from '../components/DiagBadge'
-import { IconCheck, IconCopy } from '../components/icons'
+import { IconCheck, IconClose, IconCopy, IconDoor, IconInfo, IconSignal } from '../components/icons'
 import { useSpringTransition } from '../lib/motion'
 import { useStrings, t } from '../lib/strings'
 import { callBridge, isNativeBridgeAvailable, logBridgeError, waitForBridgeReady } from '../lib/bridge'
@@ -33,10 +33,20 @@ interface BridgeStatus {
   zapretNotice?: string | null
 }
 
+/** One line of the "Проверить соединение" trail - see api/diagnostics.py's
+ *  _step(). `ok` is null for an informational note (e.g. missing CA file)
+ *  that isn't itself a pass/fail. `text` is already fully localized
+ *  backend-side, same as the old plain-string `steps` this replaced. */
+interface ConnectionStep {
+  kind: string
+  ok: boolean | null
+  text: string
+}
+
 interface TestConnectionResponse {
   ok: boolean
   error: string | null
-  steps: string[]
+  steps: ConnectionStep[]
 }
 
 /** The result of the startup check main() fires when «Проверять при запуске»
@@ -51,6 +61,30 @@ interface StartupUpdateCheck {
   updateAvailable: boolean
 }
 
+/** Which glyph a step's `kind` gets - ping vs. the room lifecycle vs. a bare
+ *  warning. Shape says what kind of check this was; the square's colour
+ *  (below) says how it went, so the two never fight over the same signal. */
+const STEP_KIND_ICON: Record<string, typeof IconSignal> = {
+  ping: IconSignal,
+  room_create: IconDoor,
+  room_verify: IconDoor,
+  room_close: IconDoor,
+}
+
+/** The square icon at the left of each connection-test row - green/red/amber
+ *  background per DiagBadge's own palette, with a shape drawn from the step's
+ *  `kind` rather than a bare check/cross. Local to this screen: DiagBadge is
+ *  round and marks the test as a whole, this marks one line of it. */
+function StepIcon({ kind, ok }: { kind: string; ok: boolean | null }) {
+  const status = ok === null ? 'warning' : ok ? 'ok' : 'error'
+  const Glyph = ok === null ? IconInfo : (STEP_KIND_ICON[kind] ?? (ok ? IconCheck : IconClose))
+  return (
+    <span className={`bb-home__diag-step-icon bb-home__diag-step-icon--${status}`}>
+      <Glyph size={13} />
+    </span>
+  )
+}
+
 export function HomeScreen() {
   const strings = useStrings()
   const [status, setStatus] = useState<BridgeStatus | null>(null)
@@ -59,7 +93,7 @@ export function HomeScreen() {
   const [copied, setCopied] = useState(false)
   const [showInstructions, setShowInstructions] = useState(false)
   const [connectionTest, setConnectionTest] = useState<DiagState>('idle')
-  const [connectionSteps, setConnectionSteps] = useState<string[]>([])
+  const [connectionSteps, setConnectionSteps] = useState<ConnectionStep[]>([])
   const [connectionError, setConnectionError] = useState<string | null>(null)
   const [zapretUpdate, setZapretUpdate] = useState<StartupUpdateCheck | null>(null)
   const [updateStarting, setUpdateStarting] = useState(false)
@@ -374,13 +408,30 @@ export function HomeScreen() {
               <DiagBadge state={connectionTest} />
             </div>
 
-            {connectionSteps.length > 0 && (
-              <ol className="bb-home__diag-steps">
-                {connectionSteps.map((step, i) => (
-                  <li key={i}>{step}</li>
-                ))}
-              </ol>
-            )}
+            <AnimatePresence>
+              {connectionSteps.length > 0 && (
+                // height:auto animates on this clip, so it owns the margin -
+                // the same split .bb-home__diag itself uses, and for the same
+                // reason: margin on the animated element itself survives the
+                // height collapse and leaves a gap behind.
+                <motion.div
+                  className="bb-home__diag-steps-clip"
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={transition}
+                >
+                  <ul className="bb-home__diag-steps">
+                    {connectionSteps.map((step, i) => (
+                      <li key={i} className="bb-home__diag-step">
+                        <StepIcon kind={step.kind} ok={step.ok} />
+                        <span>{step.text}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </motion.div>
+              )}
+            </AnimatePresence>
             {connectionError && (
               <p className="text-caption bb-home__diag-error">{connectionError}</p>
             )}

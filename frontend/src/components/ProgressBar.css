@@ -1,0 +1,32 @@
+.bb-progress {
+  width: 100%;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--color-surface-sunken);
+  border: 1px solid var(--color-border);
+  overflow: hidden;
+}
+
+.bb-progress__fill {
+  height: 100%;
+  border-radius: var(--radius-full);
+  background: var(--color-accent);
+  transition: width 0.2s ease;
+}
+
+/* No byte count to show (verifying/extracting) - a stripe that keeps moving
+   reads as "still working", where a bar frozen at the download's last
+   percent would read as stalled. */
+.bb-progress--indeterminate .bb-progress__fill {
+  width: 40%;
+  animation: bb-progress-slide 1.1s ease-in-out infinite;
+}
+
+@keyframes bb-progress-slide {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(250%);
+  }
+}

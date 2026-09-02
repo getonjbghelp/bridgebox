@@ -8,6 +8,9 @@
 }
 
 .bb-segmented__item {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding: 6px 14px;
   border: 0;
   border-radius: calc(var(--radius-sm) - 2px);

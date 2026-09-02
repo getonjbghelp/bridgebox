@@ -1,25 +1,5 @@
 # Official Jackbox Games hosts for Zapret hostlist (SNI / hostname match).
-# Parent domains cover dynamic relays like ecast-relay-prod-*.jackboxgames.com.
+# Parent domains cover dynamic relays like ecast-relay-prod-*.jackboxgames.com. and other subdomains
 
-# --- Ecast API ---
-ecast.jackboxgames.com
-ecast-qa.jackboxgames.com
-ecast-prod-use2.jackboxgames.com
-ecast-prod-use1.jackboxgames.com
-
-# --- Other ---
-cdn.jackboxgames.com
-bundles.jackbox.tv
-uuid.jackbox.tv
 jackboxgames.com
-www.jackboxgames.com
-api.jackboxgames.com
-api-uat.jackboxgames.com
-binjpipe.jackboxgames.com
 jackbox.tv
-nopus-assets.jackbox.tv
-
-# --- Blobcast API v1 ---
-blobcast.jackboxgames.com
-blobcast-test.jackboxgames.com
-blobcast-qa.jackboxgames.com

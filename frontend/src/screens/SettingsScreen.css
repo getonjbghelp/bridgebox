@@ -112,6 +112,15 @@
   margin-top: var(--space-2);
 }
 
+/* Replaces the update modal's old spinner+text row - full width here (the
+   modal has no competing flex sibling while this shows), unlike
+   AppUpdateBanner's own fixed-width copy of this class. */
+.bb-update-progress {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
 /* Each row used to be its own independent grid, so its 1fr tracks were sized
    against only *that* row's content - the header row (long domain names)
    and the data rows (short "мс" values) ended up with different column

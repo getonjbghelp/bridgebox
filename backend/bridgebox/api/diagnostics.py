@@ -59,6 +59,14 @@ def _find_key(node, key: str) -> str | None:
     return None
 
 
+def _step(kind: str, ok: bool | None, text: str) -> dict:
+    """One line of the "Проверить соединение" trail, tagged for the frontend's
+    icon (ok/error/warning) instead of leaving it to guess from the localized
+    text. `kind` groups by phase (ping/room_create/room_verify/room_close) -
+    unused today, kept for a future per-phase view rather than a per-line one."""
+    return {"kind": kind, "ok": ok, "text": text}
+
+
 class DiagnosticsMixin:
     def test_connection(self) -> dict:
         try:
@@ -115,7 +123,7 @@ class DiagnosticsMixin:
         import ssl
 
         lang = self.current_language()
-        steps: list[str] = []
+        steps: list[dict] = []
         status = self._runtime.get_status()
         if not status.get("running"):
             return {"ok": False, "error": i18n.t("diag.bridge_not_running", lang), "steps": steps}
@@ -135,7 +143,9 @@ class DiagnosticsMixin:
         else:
             # The bridge is running, so the CA should exist; if it somehow does
             # not, say so instead of silently downgrading to no verification.
-            steps.append(i18n.t("diag.no_ca_file", lang, name=ca_file.name))
+            steps.append(
+                _step("warning", None, i18n.t("diag.no_ca_file", lang, name=ca_file.name))
+            )
             ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
             ssl_context.check_hostname = False
             ssl_context.verify_mode = ssl.CERT_NONE
@@ -156,16 +166,26 @@ class DiagnosticsMixin:
             for name, result in ping_results.items():
                 if result["ok"]:
                     steps.append(
-                        i18n.t(
-                            "diag.ping_ok",
-                            lang,
-                            name=name,
-                            status=result["status"],
-                            ms=f"{result['elapsedMs']:.0f}",
+                        _step(
+                            "ping",
+                            True,
+                            i18n.t(
+                                "diag.ping_ok",
+                                lang,
+                                name=name,
+                                status=result["status"],
+                                ms=f"{result['elapsedMs']:.0f}",
+                            ),
                         )
                     )
                 else:
-                    steps.append(i18n.t("diag.ping_error", lang, name=name, error=result["error"]))
+                    steps.append(
+                        _step(
+                            "ping",
+                            False,
+                            i18n.t("diag.ping_error", lang, name=name, error=result["error"]),
+                        )
+                    )
 
             # A browser-like User-Agent is mandatory, not cosmetic: Jackbox's
             # AWS load balancer answers anything else with a 403 HTML page
@@ -193,9 +213,15 @@ class DiagnosticsMixin:
                     raw = await response.read()
             except Exception as exc:
                 steps.append(
-                    i18n.t("diag.create_room_network_error", lang, detail=describe_exception(exc))
+                    _step(
+                        "room_create",
+                        False,
+                        i18n.t(
+                            "diag.create_room_network_error", lang, detail=describe_exception(exc)
+                        ),
+                    )
                 )
-                return {"ok": False, "error": steps[-1], "steps": steps}
+                return {"ok": False, "error": steps[-1]["text"], "steps": steps}
 
             try:
                 body = json.loads(raw)
@@ -205,26 +231,34 @@ class DiagnosticsMixin:
                 # between "DPI is blocking us" and "the API changed shape".
                 snippet = redact(raw[:200].decode("utf-8", errors="replace").strip())
                 steps.append(
-                    i18n.t(
-                        "diag.create_room_not_json",
-                        lang,
-                        status=status,
-                        n=len(raw),
-                        snippet=repr(snippet),
+                    _step(
+                        "room_create",
+                        False,
+                        i18n.t(
+                            "diag.create_room_not_json",
+                            lang,
+                            status=status,
+                            n=len(raw),
+                            snippet=repr(snippet),
+                        ),
                     )
                 )
-                return {"ok": False, "error": steps[-1], "steps": steps}
+                return {"ok": False, "error": steps[-1]["text"], "steps": steps}
 
             if not isinstance(body, dict):
                 steps.append(
-                    i18n.t(
-                        "diag.create_room_unexpected_json",
-                        lang,
-                        status=status,
-                        json=_redacted_json(body)[:200],
+                    _step(
+                        "room_create",
+                        False,
+                        i18n.t(
+                            "diag.create_room_unexpected_json",
+                            lang,
+                            status=status,
+                            json=_redacted_json(body)[:200],
+                        ),
                     )
                 )
-                return {"ok": False, "error": steps[-1], "steps": steps}
+                return {"ok": False, "error": steps[-1]["text"], "steps": steps}
 
             # Reuses the exact function RoomsProxy uses in production, rather
             # than re-checking body.get("roomid") here: the real API wraps
@@ -239,15 +273,19 @@ class DiagnosticsMixin:
 
             if not room_id:
                 steps.append(
-                    i18n.t(
-                        "diag.create_room_no_code",
-                        lang,
-                        status=status,
-                        keys=tuple(rewrite.room_id_keys),
-                        json=_redacted_json(body)[:400],
+                    _step(
+                        "room_create",
+                        False,
+                        i18n.t(
+                            "diag.create_room_no_code",
+                            lang,
+                            status=status,
+                            keys=tuple(rewrite.room_id_keys),
+                            json=_redacted_json(body)[:400],
+                        ),
                     )
                 )
-                return {"ok": False, "error": steps[-1], "steps": steps}
+                return {"ok": False, "error": steps[-1]["text"], "steps": steps}
 
             # Whether a "server"/"host" relay field was found and rewritten
             # is purely informational here - this test no longer opens a WS
@@ -255,7 +293,13 @@ class DiagnosticsMixin:
             # one is not a failure, just a note about this particular app.
             relay_note = f", relay -> {server}" if server else ""
             steps.append(
-                i18n.t("diag.room_created", lang, room_id=room_id, status=status, relay_note=relay_note)
+                _step(
+                    "room_create",
+                    True,
+                    i18n.t(
+                        "diag.room_created", lang, room_id=room_id, status=status, relay_note=relay_note
+                    ),
+                )
             )
 
             # Confirmed against the live API: GET /api/v2/rooms/<code> right
@@ -275,21 +319,33 @@ class DiagnosticsMixin:
                     await lookup_response.read()
             except Exception as exc:
                 steps.append(
-                    i18n.t(
-                        "diag.room_check_network_error",
-                        lang,
-                        room_id=room_id,
-                        detail=describe_exception(exc),
+                    _step(
+                        "room_verify",
+                        False,
+                        i18n.t(
+                            "diag.room_check_network_error",
+                            lang,
+                            room_id=room_id,
+                            detail=describe_exception(exc),
+                        ),
                     )
                 )
-                return {"ok": False, "error": steps[-1], "steps": steps}
+                return {"ok": False, "error": steps[-1]["text"], "steps": steps}
 
             if lookup_status != 200:
                 steps.append(
-                    i18n.t("diag.room_check_bad_status", lang, room_id=room_id, status=lookup_status)
+                    _step(
+                        "room_verify",
+                        False,
+                        i18n.t(
+                            "diag.room_check_bad_status", lang, room_id=room_id, status=lookup_status
+                        ),
+                    )
                 )
-                return {"ok": False, "error": steps[-1], "steps": steps}
-            steps.append(i18n.t("diag.room_confirmed", lang, room_id=room_id))
+                return {"ok": False, "error": steps[-1]["text"], "steps": steps}
+            steps.append(
+                _step("room_verify", True, i18n.t("diag.room_confirmed", lang, room_id=room_id))
+            )
 
             await self._close_test_room(
                 session,
@@ -347,18 +403,26 @@ class DiagnosticsMixin:
                 raw = await response.read()
         except Exception as exc:
             steps.append(
-                i18n.t(
-                    "diag.room_close_failed_network",
-                    lang,
-                    room_id=room_id,
-                    detail=describe_exception(exc),
+                _step(
+                    "room_close",
+                    False,
+                    i18n.t(
+                        "diag.room_close_failed_network",
+                        lang,
+                        room_id=room_id,
+                        detail=describe_exception(exc),
+                    ),
                 )
             )
             logger.warning("could not close test room %s: %s", room_id, exc)
             return
 
         if 200 <= status < 300:
-            steps.append(i18n.t("diag.room_closed", lang, room_id=room_id, status=status))
+            steps.append(
+                _step(
+                    "room_close", True, i18n.t("diag.room_closed", lang, room_id=room_id, status=status)
+                )
+            )
             return
 
         # Report what the server actually said. Saying "not supported" here
@@ -366,6 +430,12 @@ class DiagnosticsMixin:
         # different problem with a different fix.
         detail = redact(raw[:120].decode("utf-8", errors="replace").strip())
         steps.append(
-            i18n.t("diag.room_close_failed_status", lang, room_id=room_id, status=status, detail=detail)
+            _step(
+                "room_close",
+                False,
+                i18n.t(
+                    "diag.room_close_failed_status", lang, room_id=room_id, status=status, detail=detail
+                ),
+            )
         )
         logger.info("DELETE of test room %s answered HTTP %s: %s", room_id, status, detail)

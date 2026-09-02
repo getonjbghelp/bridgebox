@@ -418,6 +418,9 @@
     "criticalBannerTitle": "Critical security update",
     "criticalBannerBody": "Version {latest} fixes a security issue in the version you're running. Update as soon as you can.",
     "restartNow": "Restart now",
-    "applyFailed": "Automatic update failed: {error}"
+    "applyFailed": "Automatic update failed: {error}",
+    "phaseDownload": "Downloading the archive…",
+    "phaseVerify": "Verifying the checksum…",
+    "phaseExtract": "Unpacking…"
   }
 }
