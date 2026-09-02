@@ -868,6 +868,16 @@ class SyncPublishUI:
                 cwd=cwd,
                 capture_output=True,
                 text=True,
+                # Explicit, not left to text=True's own default
+                # (locale.getpreferredencoding - the system ANSI code page,
+                # e.g. cp1251, on a Russian Windows): build_portable(_internal).py
+                # now always writes its own stdout as UTF-8 (see its own
+                # reconfigure() fix for the crash this exact mismatch used
+                # to cause), and git/gh both emit UTF-8 regardless of
+                # console code page - decoding here with anything else
+                # mangles every non-ASCII byte instead of just replacing
+                # the odd unmappable one.
+                encoding="utf-8",
                 errors="replace",
             )
         except FileNotFoundError as exc:

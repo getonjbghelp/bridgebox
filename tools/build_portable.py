@@ -51,6 +51,25 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
+# SECURITY/UX FIX: when this script's stdout is a pipe rather than a real
+# console (every subprocess-based caller - sync_and_publish(_internal).py's
+# "Собрать релиз", any future CI step that shells out to this directly
+# instead of --gui) Windows hands Python the system ANSI code page for it
+# (e.g. cp1251 on a Russian machine), not UTF-8 - and npm/vite's own build
+# output routinely contains characters that codepage cannot encode (vite's
+# "✓ built in ...Ns", a bare checkmark). log()'s own print() then
+# raises UnicodeEncodeError and takes the whole build down over a single
+# cosmetic character in output that was never the actual problem.
+# reconfigure() makes every print() in this process safe regardless of what
+# codepage the parent handed it, replacing anything unencodable instead of
+# crashing on it.
+for _stream in (sys.stdout, sys.stderr):
+    if _stream is not None:
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 BACKEND_DIR = REPO_ROOT / "backend"
 FRONTEND_DIR = REPO_ROOT / "frontend"
