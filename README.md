@@ -6,18 +6,28 @@
 
 *Made with Claude Sonnet 5 / Opus 5 / GPT-5.6 Sol*
 
-[![Release](https://img.shields.io/github/v/release/getonjbghelp/bridgebox?label=%D1%80%D0%B5%D0%BB%D0%B8%D0%B7&color=1d4ed8)](https://github.com/getonjbghelp/bridgebox/releases/latest)
-[![License](https://img.shields.io/badge/%D0%BB%D0%B8%D1%86%D0%B5%D0%BD%D0%B7%D0%B8%D1%8F-PolyForm%20NonCommercial%201.0.0-1d4ed8)](LICENSE.md)
-[![Platform](https://img.shields.io/badge/%D0%BF%D0%BB%D0%B0%D1%82%D1%84%D0%BE%D1%80%D0%BC%D0%B0-Windows%2010%20%2F%2011-1d4ed8)](#скачать)
-[![Downloads](https://img.shields.io/github/downloads/getonjbghelp/bridgebox/total?label=%D1%81%D0%BA%D0%B0%D1%87%D0%B8%D0%B2%D0%B0%D0%BD%D0%B8%D0%B9&color=1d4ed8)](https://github.com/getonjbghelp/bridgebox/releases)
-[![Telegram](https://img.shields.io/badge/Telegram-%40bridgeboxofficial-1d4ed8?logo=telegram&logoColor=white)](https://t.me/bridgeboxofficial)
-
 </div>
 
+<p align="center">
 BridgeBox поднимает локальный мост между Jackbox Party Pack и вашим интернет-провайдером
 и проводит трафик игры в обход DPI-блокировок. Работает целиком на вашем компьютере,
 не трогает систему сверх одного локального сертификата и не требует ни VPN, ни
 арендованного сервера.
+</p>
+
+<div align="center">
+
+[![СКАЧАТЬ](https://img.shields.io/github/downloads/getonjbghelp/bridgebox/total?style=for-the-badge&label=%D0%A1%D0%9A%D0%90%D0%A7%D0%90%D0%A2%D0%AC&labelColor=111a2e&color=17233d)](https://github.com/getonjbghelp/bridgebox/releases/latest)
+[![ПОДДЕРЖАТЬ](https://img.shields.io/badge/%D0%9F%D0%9E%D0%94%D0%94%D0%95%D0%A0%D0%96%D0%90%D0%A2%D0%AC-17233d?style=for-the-badge)](#поддержать-проект)
+[![Telegram](https://img.shields.io/badge/TELEGRAM-17233d?style=for-the-badge&logo=telegram&logoColor=60a5fa)](https://t.me/bridgeboxofficial)
+
+[![Release](https://img.shields.io/github/v/release/getonjbghelp/bridgebox?label=%D1%80%D0%B5%D0%BB%D0%B8%D0%B7&labelColor=111a2e&color=17233d)](https://github.com/getonjbghelp/bridgebox/releases/latest)
+[![License](https://img.shields.io/badge/%D0%BB%D0%B8%D1%86%D0%B5%D0%BD%D0%B7%D0%B8%D1%8F-PolyForm%20NonCommercial%201.0.0-17233d?labelColor=111a2e)](LICENSE.md)
+[![Platform](https://img.shields.io/badge/%D0%BF%D0%BB%D0%B0%D1%82%D1%84%D0%BE%D1%80%D0%BC%D0%B0-Windows%2010%20%2F%2011-17233d?labelColor=111a2e)](#скачать)
+[![Last commit](https://img.shields.io/github/last-commit/getonjbghelp/bridgebox?label=%D0%BE%D0%B1%D0%BD%D0%BE%D0%B2%D0%BB%D0%B5%D0%BD%D0%BE&labelColor=111a2e&color=17233d)](https://github.com/getonjbghelp/bridgebox/commits/main)
+[![Stars](https://img.shields.io/github/stars/getonjbghelp/bridgebox?label=%D0%B7%D0%B2%D1%91%D0%B7%D0%B4%D1%8B&labelColor=111a2e&color=17233d)](https://github.com/getonjbghelp/bridgebox/stargazers)
+
+</div>
 
 ---
 

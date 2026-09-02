@@ -6,18 +6,28 @@
 
 *Made with Claude Sonnet 5 / Opus 5 / GPT-5.6 Sol*
 
-[![Release](https://img.shields.io/github/v/release/getonjbghelp/bridgebox?label=release&color=1d4ed8)](https://github.com/getonjbghelp/bridgebox/releases/latest)
-[![License](https://img.shields.io/badge/license-PolyForm%20NonCommercial%201.0.0-1d4ed8)](LICENSE.md)
-[![Platform](https://img.shields.io/badge/platform-Windows%2010%20%2F%2011-1d4ed8)](#download)
-[![Downloads](https://img.shields.io/github/downloads/getonjbghelp/bridgebox/total?label=downloads&color=1d4ed8)](https://github.com/getonjbghelp/bridgebox/releases)
-[![Telegram](https://img.shields.io/badge/Telegram-%40bridgeboxofficial-1d4ed8?logo=telegram&logoColor=white)](https://t.me/bridgeboxofficial)
-
 </div>
 
+<p align="center">
 BridgeBox opens a local bridge between Jackbox Party Pack and your ISP and routes the
 game's traffic around DPI blocking. It runs entirely on your own computer, touches
 nothing on the system beyond one local certificate, and needs neither a VPN nor a
 rented server.
+</p>
+
+<div align="center">
+
+[![DOWNLOAD](https://img.shields.io/github/downloads/getonjbghelp/bridgebox/total?style=for-the-badge&label=DOWNLOAD&labelColor=111a2e&color=17233d)](https://github.com/getonjbghelp/bridgebox/releases/latest)
+[![SUPPORT](https://img.shields.io/badge/SUPPORT-17233d?style=for-the-badge)](#support-the-project)
+[![Telegram](https://img.shields.io/badge/TELEGRAM-17233d?style=for-the-badge&logo=telegram&logoColor=60a5fa)](https://t.me/bridgeboxofficial)
+
+[![Release](https://img.shields.io/github/v/release/getonjbghelp/bridgebox?label=release&labelColor=111a2e&color=17233d)](https://github.com/getonjbghelp/bridgebox/releases/latest)
+[![License](https://img.shields.io/badge/license-PolyForm%20NonCommercial%201.0.0-17233d?labelColor=111a2e)](LICENSE.md)
+[![Platform](https://img.shields.io/badge/platform-Windows%2010%20%2F%2011-17233d?labelColor=111a2e)](#download)
+[![Last commit](https://img.shields.io/github/last-commit/getonjbghelp/bridgebox?label=updated&labelColor=111a2e&color=17233d)](https://github.com/getonjbghelp/bridgebox/commits/main)
+[![Stars](https://img.shields.io/github/stars/getonjbghelp/bridgebox?label=stars&labelColor=111a2e&color=17233d)](https://github.com/getonjbghelp/bridgebox/stargazers)
+
+</div>
 
 ---
 
