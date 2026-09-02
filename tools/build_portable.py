@@ -236,9 +236,21 @@ def ensure_icon(icon_arg: str | None) -> Path:
     placeholder (brand-navy rounded square, "bb" monogram matching the
     collapsed sidebar's own identity in BrandLogo.tsx), so the exe never
     ships with PyInstaller's generic default icon. Swap in real artwork
-    later with --icon; nothing else about the build changes."""
+    later with --icon; nothing else about the build changes.
+
+    BUG FIX: a RELATIVE --icon (e.g. ".github\\assets\\bridgebox.ico", the
+    exact form release.yml passes) used to be handed to PyInstaller as-is.
+    PyInstaller resolves a relative icon path against its own specpath
+    (BUILD_DIR here), not the process's cwd - so this always failed the
+    moment BUILD_DIR stopped being the cwd, which every real caller
+    (release.yml, sync_and_publish's "Собрать релиз") already is. Confirmed
+    against a real CI run: "FileNotFoundError: Icon input file
+    ...\\build\\portable\\.github/assets/bridgebox.ico not found" - resolving
+    here, before PyInstaller ever sees the path, makes it immune to
+    whatever base directory PyInstaller decides to resolve relative paths
+    against."""
     if icon_arg:
-        path = Path(icon_arg)
+        path = Path(icon_arg).resolve()
         if not path.exists():
             raise SystemExit(f"--icon {path} does not exist")
         return path
