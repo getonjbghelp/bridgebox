@@ -1,5 +1,3 @@
-import { motion } from 'framer-motion'
-import { useMicroTransition } from '../lib/motion'
 import './Toggle.css'
 
 interface ToggleProps {
@@ -16,8 +14,6 @@ interface ToggleProps {
 }
 
 export function Toggle({ checked, onChange, size = 'sm', label, disabled }: ToggleProps) {
-  const transition = useMicroTransition()
-
   return (
     <button
       type="button"
@@ -28,7 +24,9 @@ export function Toggle({ checked, onChange, size = 'sm', label, disabled }: Togg
       className={`bb-toggle bb-toggle--${size}${checked ? ' bb-toggle--on' : ''}`}
       onClick={() => !disabled && onChange(!checked)}
     >
-      <motion.span className="bb-toggle__thumb" layout transition={transition} />
+      {/* A plain span, not motion.span - see Toggle.css's own comment on why
+          this moved off framer's `layout` FLIP animation. */}
+      <span className="bb-toggle__thumb" />
     </button>
   )
 }

@@ -192,13 +192,32 @@ class AppUpdateMixin:
 
             async with aiohttp.ClientSession() as session:
                 release = await app_update.fetch_latest_release(session)
+                installed = app_version()
+                if not app_update.is_newer(release.version, installed):
+                    # SECURITY FIX (forced downgrade): this path used to stage
+                    # whatever releases/latest returned with no comparison at
+                    # all - a maintainer re-point, a rollback, or a
+                    # compromised release pipeline (all in scope per this
+                    # module's own docstring) would get staged and swapped in
+                    # exactly like a real update, silently replacing a newer,
+                    # possibly patched install with an older, possibly
+                    # vulnerable one. check_app_update already computes this
+                    # same comparison for the UI banner; the apply path never
+                    # consulted it.
+                    return {
+                        "ok": False,
+                        "error": f"Последняя доступная версия ({release.version or '?'}) "
+                        f"не новее установленной ({installed}) - обновление отменено.",
+                        "version": None,
+                    }
                 if not release.asset_url or not release.asset_is_archive:
                     raise RuntimeError(
                         f"release {release.version or '?'} ships no portable .zip to "
                         "self-update from"
                     )
                 await app_update.download_exe(
-                    session, release.asset_url, archive_path, on_progress=progress
+                    session, release.asset_url, archive_path,
+                    expected_size=release.asset_size, on_progress=progress,
                 )
             try:
                 # Runs before extraction, not after: the downloaded bytes get
@@ -272,11 +291,22 @@ class AppUpdateMixin:
             )
             script_path = self._temp_root() / "bridgebox_apply_update.bat"
             script_path.parent.mkdir(parents=True, exist_ok=True)
-            script_path.write_text(script, encoding="utf-8")
+            # utf-8-sig, not utf-8: cmd.exe reads a .bat in the machine's OEM
+            # code page unless a UTF-8 BOM tells it otherwise (see
+            # build_relaunch_script's own chcp 65001 - the two only work
+            # together). Plain utf-8 here mangled any non-ASCII install path.
+            script_path.write_text(script, encoding="utf-8-sig")
             subprocess.Popen(
                 ["cmd", "/c", str(script_path)],
                 cwd=str(self._project_root),
-                creationflags=getattr(subprocess, "DETACHED_PROCESS", 0)
+                # CREATE_NO_WINDOW, not DETACHED_PROCESS: cmd.exe is a
+                # console-subsystem executable, and DETACHED_PROCESS alone
+                # does not suppress a console for one - it only opts out of
+                # inheriting the parent's, which for a console app makes
+                # Windows allocate it a brand new (visible) one instead. That
+                # was the console flash the user actually saw, briefly
+                # showing the batch script's own echoed commands.
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)
                 | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
             )
             logger.info("relaunch helper started (%s) - stopping to let it apply the update", script_path)

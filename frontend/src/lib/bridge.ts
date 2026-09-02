@@ -21,6 +21,11 @@ export function isNativeBridgeAvailable(): boolean {
 // ponytail: 50ms poll instead of subscribing to 'pywebviewready'. The event
 // is one-shot and may already have fired before this module ran, so polling
 // the thing we actually need is both shorter and harder to get wrong.
+// Upgrade path if this interval ever shows up as real overhead (e.g. in the
+// motion tracer, or BRIDGE_READY_TIMEOUT_MS needing to grow for a slow
+// machine): attach the 'pywebviewready' listener AND check the predicate
+// synchronously right after attaching it - that closes the race without
+// polling, at the cost of two code paths instead of one.
 function pollUntil(predicate: () => boolean, timeoutMs: number): Promise<boolean> {
   if (predicate()) return Promise.resolve(true)
   if (typeof window === 'undefined') return Promise.resolve(false)

@@ -1,0 +1,107 @@
+name: Publish release
+
+# Fired by tools/sync_and_publish_internal.py's own "Публикация релиза"
+# step, which pushes an annotated tag (bare version, e.g. "0.1.9b1" - no
+# "v" prefix, matching every tag already in this repo's history) whose
+# message IS the release's changelog text, RU+EN, exactly as typed into
+# that tool. Nothing here writes release notes - it only reads what that
+# tag already carries.
+on:
+  push:
+    tags:
+      - "*"
+
+# The default GITHUB_TOKEN, not a PAT - both the commits this checkout can
+# see and the release this job creates end up authored by github-actions
+# and carry GitHub's own "Verified" badge, which a hand-run local publish
+# never could without separately managing a GPG key.
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The tag's own annotation is read below via `git for-each-ref` -
+          # a shallow checkout can leave that unreachable.
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # Mirrors run.bat's own venv bootstrap exactly (same two commands,
+      # same [dev] extra) - build_portable.py's ensure_build_deps() refuses
+      # to run at all without backend/.venv already existing, and installs
+      # the [build] extra (PyInstaller, Pillow) into it on its own once it
+      # does.
+      - name: Create the backend venv
+        working-directory: backend
+        run: |
+          python -m venv .venv
+          .venv\Scripts\python.exe -m pip install --disable-pip-version-check -q -e ".[dev]"
+
+      # tools/build_portable.py's own docstring: builds frontend/dist, runs
+      # PyInstaller, assembles dist/BridgeBox_Portable/, writes the
+      # integrity baseline, and validates the result - raises (failing this
+      # step, and with it the whole job) on anything short of a real build.
+      # --icon: without it, ensure_icon() silently falls back to a generated
+      # navy "bb" placeholder (see build_portable.py) - CI has no access to
+      # any icon that only lives on a local machine, so the real artwork has
+      # to be a checked-in file for an automated build to ever pick it up.
+      - name: Build the portable release
+        run: backend\.venv\Scripts\python.exe tools\build_portable.py --icon .github\assets\bridgebox.ico
+
+      # Wrapped in a BridgeBox_Portable-v<tag>/ folder inside the zip, and
+      # that same name in the .zip filename itself - verified against a real
+      # past release's own archive (0.1.9b1), not assumed: every file in it
+      # sits under that folder, never loose at the archive root. An earlier
+      # version of this step produced a flat zip on the theory that
+      # README.md's "unpack it anywhere" implied no subfolder - it doesn't
+      # actually say that, and a flat zip contradicts every release shipped
+      # before this pipeline existed.
+      - name: Zip the release
+        run: |
+          $folderName = "BridgeBox_Portable-v$env:GITHUB_REF_NAME"
+          Rename-Item -Path "dist\BridgeBox_Portable" -NewName $folderName
+          Compress-Archive -Path "dist\$folderName" -DestinationPath "$folderName.zip"
+          "ZIP_NAME=$folderName.zip" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      # sync_and_publish_internal.py writes the tag message as
+      # "<title>\n\n<notes>" - the same subject/body shape as a commit
+      # message, so git's own %(contents:subject) (first line) and
+      # %(contents:body) (everything after the blank line) split it apart
+      # with no custom parsing here. A title-less tag (pushed some other
+      # way) falls back to the bare tag name via GITHUB_REF_NAME.
+      - name: Read the release title and notes from the tag
+        shell: pwsh
+        run: |
+          $title = (git for-each-ref --format="%(contents:subject)" "refs/tags/$env:GITHUB_REF_NAME") -join ' '
+          if (-not $title) { $title = $env:GITHUB_REF_NAME }
+          git for-each-ref --format="%(contents:body)" "refs/tags/$env:GITHUB_REF_NAME" |
+            Out-File -FilePath release_notes.txt -Encoding utf8
+          "RELEASE_TITLE=$title" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      # No draft step: the build already had to succeed and validate above,
+      # so this is the first and only place anything becomes visible to the
+      # public - a failure in any earlier step means this line never runs,
+      # and nothing gets published at all.
+      # No .rar: Windows (and this runner) has nothing that can write one -
+      # RAR is a proprietary format only WinRAR's own licensed tool produces,
+      # unlike 7-Zip/Compress-Archive for .zip. Past releases that shipped a
+      # .rar built it by hand locally; that path is now
+      # sync_and_publish(_internal).py's "Прикрепить к релизу" - it uploads
+      # any local file onto this release once CI has published it, .rar
+      # included.
+      - name: Publish the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create "$env:GITHUB_REF_NAME" "$env:ZIP_NAME"
+          --title "$env:RELEASE_TITLE" --notes-file release_notes.txt

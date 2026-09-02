@@ -16,17 +16,30 @@
 
 .bb-toggle--on {
   background: var(--color-accent);
-  justify-content: flex-end;
-}
-.bb-toggle:not(.bb-toggle--on) {
-  justify-content: flex-start;
 }
 
+/* The slide used to be framer-motion's `layout` FLIP animation, driven by
+   flipping the track's own justify-content between flex-start/flex-end.
+   `layout` measures the thumb's absolute position on every render it can
+   see, with no way to tell "my parent's flex alignment changed" apart from
+   "something ELSE on the page reflowed and moved my parent" - a banner
+   appearing above a settings row, say. Both looked like "the thumb's rect
+   moved" to framer, so an unrelated layout shift replayed the on/off slide
+   on every toggle on screen, chasing a capsule that had not actually
+   flipped. A plain CSS transform transition only fires when ITS OWN
+   computed value changes, which an ancestor moving never does. */
 .bb-toggle__thumb {
   display: block;
   border-radius: 50%;
   background: #fff;
   box-shadow: 0 1px 2px rgba(11, 18, 32, 0.25);
+  transition: transform 180ms var(--ease-standard);
+}
+
+/* Settings' "Анимации интерфейса", mirrored onto the root by
+   MotionPrefsContext - the JS gate only reaches framer-motion. */
+:root[data-animations='off'] .bb-toggle__thumb {
+  transition: none;
 }
 
 .bb-toggle--sm {
@@ -37,6 +50,10 @@
   width: 18px;
   height: 18px;
 }
+/* Travel = track (40) - 2*padding (6) - thumb (18). */
+.bb-toggle--sm.bb-toggle--on .bb-toggle__thumb {
+  transform: translateX(16px);
+}
 
 .bb-toggle--lg {
   width: 68px;
@@ -45,4 +62,8 @@
 .bb-toggle--lg .bb-toggle__thumb {
   width: 34px;
   height: 34px;
+}
+/* Travel = track (68) - 2*padding (6) - thumb (34). */
+.bb-toggle--lg.bb-toggle--on .bb-toggle__thumb {
+  transform: translateX(28px);
 }

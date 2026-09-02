@@ -195,6 +195,31 @@ def test_main_proceeds_when_admin(monkeypatch):
         handler()
 
 
+def test_main_falls_back_to_defaults_when_config_yaml_is_broken(monkeypatch):
+    """SECURITY/UX regression: load_config is intentionally strict (a bad
+    port or log level SHOULD raise - see test_invalid_port_raises in
+    test_config.py), but that raise used to propagate straight out of
+    main(), before setup_logging even ran and with no console in the frozen
+    windowed build - one hand-edited line in config.yaml bricked the app
+    with no way back into Settings. main() must now catch that and proceed
+    on defaults instead of dying."""
+    monkeypatch.setattr(sys, "argv", ["prog", "--dev"])
+    fake_window = _FakeWindow()
+    monkeypatch.setattr(desktop.webview, "create_window", lambda *a, **k: fake_window)
+    monkeypatch.setattr(desktop.webview, "start", lambda: None)
+
+    def _broken_load_config(path):
+        raise ValueError("server: []  # wrong-typed section, or any other hand-edit slip")
+
+    monkeypatch.setattr(desktop, "load_config", _broken_load_config)
+
+    # Must not raise - this is the whole point of the fix.
+    desktop.main(admin_check=lambda: True, startup_check_delay_s=0)
+
+    for handler in fake_window.events.closing.handlers:
+        handler()
+
+
 # ---- reconcile_self_update (the main()-startup half of a self-update) -----
 
 
@@ -1608,11 +1633,15 @@ def _fake_portable_release_zip(dest: Path, *, exe_bytes: bytes, internal_bytes: 
 
 
 class _FakeAppRelease:
-    def __init__(self, *, version="0.2.0", asset_url="ok", asset_is_archive=True, asset_digest=None):
+    def __init__(
+        self, *, version="0.2.0", asset_url="ok", asset_is_archive=True, asset_digest=None,
+        asset_size=0,
+    ):
         self.version = version
         self.asset_url = asset_url
         self.asset_is_archive = asset_is_archive
         self.asset_digest = asset_digest
+        self.asset_size = asset_size
 
 
 def test_apply_app_update_coro_downloads_and_stages_both_the_exe_and_internal_dir(
@@ -3359,6 +3388,12 @@ def test_restart_app_passes_a_real_environment_outside_a_frozen_build(tmp_path: 
 
     assert captured["env"]["BRIDGEBOX_UNRELATED"] == "keep-me"
     assert len(captured["env"]) > 1
+    # CREATE_NO_WINDOW, not DETACHED_PROCESS - see the identical check on
+    # restart_after_app_update's own relaunch helper below for why.
+    no_window = getattr(desktop.subprocess, "CREATE_NO_WINDOW", 0)
+    detached = getattr(desktop.subprocess, "DETACHED_PROCESS", 0)
+    assert captured["creationflags"] & no_window
+    assert not captured["creationflags"] & detached
 
 
 # ---- restart_after_app_update (the relaunch-helper flow) -------------------
@@ -3428,6 +3463,13 @@ def test_restart_after_app_update_writes_and_spawns_the_relaunch_helper(
     # cmd /c <script>, detached - same shape restart_app's own subprocess.Popen
     # call uses for the relaunch it spawns.
     assert spawned["command"][0:2] == ["cmd", "/c"]
+    # CREATE_NO_WINDOW, not DETACHED_PROCESS - cmd.exe is a console-subsystem
+    # executable, and DETACHED_PROCESS alone does not suppress a console for
+    # one, it briefly flashed the batch script's own echoed commands.
+    no_window = getattr(desktop_app_update.subprocess, "CREATE_NO_WINDOW", 0)
+    detached = getattr(desktop_app_update.subprocess, "DETACHED_PROCESS", 0)
+    assert spawned["kwargs"]["creationflags"] & no_window
+    assert not spawned["kwargs"]["creationflags"] & detached
     script_path = Path(spawned["command"][2])
     assert script_path.parent == api._temp_root()
     script = script_path.read_text(encoding="utf-8")

@@ -76,7 +76,7 @@ def test_display_version_strips_a_prerelease_suffix_even_with_a_real_patch_part(
 def test_the_shipped_version_is_a_beta():
     """Guards the pair: if pyproject is bumped to a final version this fails,
     which is the reminder to also decide what happens to the badge."""
-    assert version_mod.release_label() == "b1"
+    assert version_mod.release_label() == "b2"
 
 
 def test_build_channel_reads_an_optional_pyproject_field(monkeypatch):

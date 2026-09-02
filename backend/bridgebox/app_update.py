@@ -183,7 +183,18 @@ def _numeric_parts(value: str) -> tuple[int, ...]:
     match = _VERSION_RE.match(value.lstrip("vV"))
     if not match:
         return ()
-    return tuple(int(part) for part in match.group(0).split("."))
+    try:
+        return tuple(int(part) for part in match.group(0).split("."))
+    except ValueError:
+        # SECURITY FIX: CPython caps int(str) at 4300 digits
+        # (sys.get_int_max_str_digits) and raises past it. A GitHub
+        # tag_name is free-form and length-unbounded, and
+        # fetch_latest_release puts it into AppRelease.version with no
+        # length check - so a hostile/broken release tag reached this
+        # unguarded and took is_newer() down with it, breaking update
+        # checks entirely for as long as that tag stayed "latest". Same
+        # "unparseable -> not newer" contract as an empty match above.
+        return ()
 
 
 def is_newer(latest: str, installed: str) -> bool:
@@ -372,6 +383,7 @@ async def download_exe(
     dest: Path,
     *,
     max_bytes: int = MAX_EXE_BYTES,
+    expected_size: int = 0,
     on_progress=None,
     attempts: int = DOWNLOAD_RETRY_ATTEMPTS,
     delay_s: float = DOWNLOAD_RETRY_DELAY_S,
@@ -385,6 +397,14 @@ async def download_exe(
     attempt restarts from zero and truncates `dest` rather than resuming,
     because a Range request means trusting a server's byte offsets for a file
     that becomes the next thing this app runs as.
+
+    `expected_size` - the release's own AppRelease.asset_size (from GitHub's
+    Releases API, independent of whatever this specific request's response
+    headers say). SECURITY FIX: a response with no Content-Length that ends
+    early used to be accepted as a complete download - the IncompleteDownload
+    guard below only ever fired when the header was present. Falling back to
+    the size GitHub already told us the asset is closes that gap even when a
+    CDN edge or proxy on the download itself omits the header.
 
     `allowed_hosts`/`require_https` - see _require_allowed_host."""
     import asyncio
@@ -402,7 +422,7 @@ async def download_exe(
                 _require_allowed_host(
                     str(response.url), allowed_hosts=allowed_hosts, require_https=require_https
                 )
-                total = int(response.headers.get("Content-Length") or 0)
+                total = int(response.headers.get("Content-Length") or 0) or expected_size
                 with dest.open("wb") as handle:
                     async for chunk in response.content.iter_chunked(64 * 1024):
                         received += len(chunk)
@@ -667,6 +687,17 @@ def build_relaunch_script(
 :: already downloaded and verified, then deletes itself. Safe to ignore or
 :: delete if you find this sitting in your temp folder; it means an update
 :: was interrupted before it could run.
+::
+:: SECURITY/UX FIX: cmd.exe decodes a .bat in the machine's OEM code page
+:: (cp866 on a Russian Windows, cp1252 on a Western one), never UTF-8 - so
+:: without this switch, every path below carrying a non-ASCII character (a
+:: Cyrillic user-profile folder, the common case for this app's audience)
+:: was handed to `move`/`rmdir` as mojibake, and the swap - including a
+:: [critical] security update - silently failed. Paired with the UTF-8 BOM
+:: this file is now written with (see restart_after_app_update), which is
+:: what makes chcp's switch actually stick for a script read from disk
+:: rather than typed at a live console.
+chcp 65001 >nul
 setlocal
 
 set "RETRIES={RELAUNCH_RETRY_ATTEMPTS}"

@@ -72,9 +72,16 @@ def is_blobcast_path(path: str, paths: tuple[str, ...] = BLOBCAST_PREFIXES) -> b
 # RFC 1035 label shape. Nothing exotic - the point is that "@", "/", ":", "?"
 # and whitespace cannot appear, because each of those changes which host a URL
 # built from this value resolves to.
+#
+# SECURITY FIX: ends in \Z, not $ - in Python, $ also matches just before a
+# trailing '\n', so "evil.example.com\n" used to pass this "safe to
+# interpolate into a URL" gate. This is the only check between the upstream
+# /room response's network-controlled `server` field and the string
+# BlobcastSessions.remember() stores and later interpolates into the
+# socket.io upstream URL.
 _HOSTNAME_RE = re.compile(
     r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
-    r"(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*\.?$"
+    r"(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*\.?\Z"
 )
 
 # RFC 1035's wire-format ceiling, same one zapret/strategies.py enforces.

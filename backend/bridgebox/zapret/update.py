@@ -234,7 +234,14 @@ def is_newer(latest: str, installed: str | None) -> bool:
         return bool(latest) and installed is None
 
     def parts(value: str) -> tuple[int, ...]:
-        return tuple(int(p) for p in _VERSION_PART.findall(value))
+        try:
+            return tuple(int(p) for p in _VERSION_PART.findall(value))
+        except ValueError:
+            # Same cap and same fix as app_update._numeric_parts: CPython
+            # refuses int(str) past 4300 digits, and a Flowseal tag_name is
+            # unbounded free-form text - treat it as unparseable rather than
+            # letting the update check crash.
+            return ()
 
     left, right = parts(latest), parts(installed)
     return bool(left) and bool(right) and left > right

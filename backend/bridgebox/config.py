@@ -806,6 +806,15 @@ def migrate_config_file(path: str | Path) -> bool:
         return False
 
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    if not isinstance(raw, dict):
+        # A non-mapping config.yaml (a bare scalar, a top-level list, ...) is
+        # already unusable - load_config's own caller now falls back to
+        # defaults for exactly this case (see desktop.main()). Treating it
+        # as "nothing to migrate" here avoids _fill_missing_defaults raising
+        # a TypeError (dict(7)) that this function's own docstring never
+        # promised, and that desktop.main()'s try/except around this call
+        # merely happened to swallow rather than actually handle.
+        return False
     merged, changed = _fill_missing_defaults(raw, Config().model_dump())
     if not changed:
         return False

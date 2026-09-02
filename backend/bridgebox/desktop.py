@@ -455,7 +455,15 @@ class Api(
                 command,
                 cwd=str(self._project_root),
                 env=_restart_environment(),
-                creationflags=getattr(subprocess, "DETACHED_PROCESS", 0)
+                # CREATE_NO_WINDOW, not DETACHED_PROCESS - see the identical
+                # fix and its own comment in api/app_update.py's relaunch
+                # helper. Invisible here today only because the frozen
+                # target is bridgebox.exe itself (a GUI-subsystem exe, which
+                # never gets an auto-console regardless of these flags) -
+                # the dev-mode branch above relaunches plain python.exe,
+                # a console-subsystem target the old flag combination would
+                # flash a console window for.
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)
                 | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
             )
             logger.info("restarting: %s", " ".join(command))
@@ -544,7 +552,22 @@ def main(
         raise SystemExit(1)
 
     config_path = PROJECT_ROOT / "config.yaml"
-    config = load_config(config_path)
+    try:
+        config = load_config(config_path)
+    except Exception:
+        # config.yaml is hand-editable, and load_config is intentionally
+        # strict about what it accepts (see test_invalid_port_raises et al -
+        # a bad port/log-level SHOULD raise, not silently coerce). But
+        # raising straight out of main(), before setup_logging even runs and
+        # with no console in the frozen windowed build, meant one bad line
+        # (a YAML syntax slip, a wrong-typed section, even a security
+        # validator correctly rejecting a traversal in zapret.dir) bricked
+        # the app with no way back into Settings to fix it. Falling back to
+        # defaults keeps it launchable; Settings' own "save on first change"
+        # (see save_config's docstring) rewrites the file the next time the
+        # user touches any setting.
+        logger.exception("could not load config.yaml - using defaults instead")
+        config = Config()
     # SECURITY/UX FIX (safe config migration): add any default field a newer
     # BridgeBox introduced to an EXISTING config.yaml, without touching a
     # single value the user already set - see migrate_config_file's own
